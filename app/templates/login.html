@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ config.theme or 'light' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="{{ config.colors.primary }}">
+  <title>Sign in · {{ config.app_name }}</title>
+  <style>
+    :root{ --bg: {{ config.colors.background or '#F4EEFF' }}; --primary: {{ config.colors.primary or '#424874' }}; --secondary: {{ config.colors.secondary or '#A6B1E1' }}; --accent: {{ config.colors.accent or '#DCD6F7' }}; }
+  </style>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script>try{var t=localStorage.getItem('cctv-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<div class="auth-shell">
+  <section class="auth-side">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11v8H3z"/><path d="m14 11 7-4v10l-7-4z"/><circle cx="7" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>
+      </span>
+      <span><span class="brand-name">{{ config.app_name }}</span><span class="brand-sub">{{ config.organization }}</span></span>
+    </div>
+    <h1>Every camera.<br>One control room.</h1>
+    <p>Request footage, monitor NVR health and manage integrations from a single secure workspace.</p>
+    <div class="auth-features">
+      <span>⚡ QuickSync compression</span>
+      <span>🩺 NVR health alerts</span>
+      <span>📁 Google Drive delivery</span>
+      <span>📱 Telegram MiniApp</span>
+    </div>
+  </section>
+
+  <section class="auth-main">
+    <div class="auth-box">
+      <div class="auth-mobile-brand">
+        <span class="brand-mark" style="background:linear-gradient(135deg,var(--primary),#6973a8)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11v8H3z"/><path d="m14 11 7-4v10l-7-4z"/></svg>
+        </span>
+        <span><span class="brand-name">{{ config.app_name }}</span><span class="brand-sub">{{ config.organization }}</span></span>
+      </div>
+      <div class="card card-pad">
+        <h1 style="font-size:1.45rem">Welcome back</h1>
+        <p class="muted small mt-1">Sign in to the CCTV control center.</p>
+        <div class="login-error" id="login-error"></div>
+        <form id="login-form" class="stack mt-3" autocomplete="on">
+          <div class="field">
+            <label for="username">Username</label>
+            <input class="input" id="username" name="username" autocomplete="username" placeholder="your.username" required autofocus>
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <div class="password-wrap">
+              <input class="input" id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+              <button type="button" class="icon-btn password-toggle" data-toggle-password aria-label="Show password">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <button class="btn btn-block" id="login-btn" type="submit">Sign in</button>
+        </form>
+        <div class="divider"></div>
+        <div class="row-between">
+          <span class="tiny faint">Super-admin is configured in <code class="kbd">.env</code></span>
+          <a class="btn-link" href="/miniapp">MiniApp preview →</a>
+        </div>
+      </div>
+      <p class="tiny faint" style="text-align:center;margin-top:16px">Footprints CCTV · Secure access only</p>
+    </div>
+  </section>
+</div>
+<div id="toasts"></div>
+<script src="/static/js/app.js"></script>
+<script>
+  const form = document.getElementById('login-form');
+  const errorBox = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    errorBox.classList.remove('show');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Signing in…';
+    try {
+      await App.api('/api/auth/login', {
+        method: 'POST',
+        body: { username: document.getElementById('username').value.trim(), password: document.getElementById('password').value },
+      });
+      const next = new URLSearchParams(location.search).get('next');
+      location.href = next && next.startsWith('/') ? next : '/';
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+    }
+  });
+</script>
+</body>
+</html>

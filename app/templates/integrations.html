@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+{% block title %}Integrations{% endblock %}
+{% block heading %}Integrations{% endblock %}
+{% block subheading %}Connect Google Drive, Telegram and email delivery{% endblock %}
+
+{% block content %}
+{% if not is_superadmin %}
+<div class="alert-row info mb-3" style="max-width:900px"><span class="dot"></span><div class="msg">Only the <b>super admin</b> can change credentials. You can view status and test existing connections.</div></div>
+{% endif %}
+
+<div class="tabs mb-3" id="integration-tabs">
+  <button class="tab active" data-tab="tab-google">☁️ Google Drive</button>
+  <button class="tab" data-tab="tab-telegram">🤖 Telegram</button>
+  <button class="tab" data-tab="tab-smtp">✉️ Email / SMTP</button>
+  <button class="tab" data-tab="tab-folders">📁 Drive folders</button>
+</div>
+
+<div id="tab-google" class="tab-panel active">
+  <div class="grid split-grid" id="google-grid">
+    <section class="card">
+      <div class="card-head"><h2>Service account</h2><span id="google-status" class="badge">Loading…</span></div>
+      <form class="card-body stack" id="google-form">
+        <div class="upload-zone" id="google-drop">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5-5 5 5"/><path d="M12 5v12"/></svg>
+          <div class="strong small">Drop the Google credential JSON here</div>
+          <div class="tiny faint mt-1">or click to browse · service_account key file</div>
+          <input type="file" id="google-file" accept="application/json,.json" class="hide">
+        </div>
+        <div class="field">
+          <label>Credential JSON <span class="hint" id="google-current"></span></label>
+          <textarea class="textarea mono" id="google-json" rows="7" placeholder="Paste the full service account JSON here (leave blank to keep the current key)"></textarea>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Impersonate email</label><input class="input" id="google-impersonate" placeholder="cctv@footprintsschool.edu.kh"></div>
+          <div class="field"><label>Share expiry (days)</label><input class="input" id="google-expiry" type="number" min="1" value="30"></div>
+          <div class="field span-2"><label>Fallback folder ID</label><input class="input" id="google-fallback" placeholder="Google Drive folder ID"></div>
+        </div>
+        <label class="switch"><input type="checkbox" id="google-upload" checked><span class="track"></span><span class="small">Enable Drive uploads</span></label>
+        <div class="row-between">
+          <button type="button" class="btn btn-ghost" id="google-test">Test connection</button>
+          <button type="submit" class="btn" id="google-save" {% if not is_superadmin %}disabled{% endif %}>Save Google settings</button>
+        </div>
+      </form>
+    </section>
+    <aside class="stack">
+      <section class="card card-pad">
+        <h3>How it works</h3>
+        <p class="small muted mt-1">Uploads use a Google Workspace service account with domain-wide delegation. Files are created inside the selected destination folder, then requester access is granted for the configured number of days.</p>
+        <div class="divider"></div>
+        <div class="row-between small"><span class="faint">Client email</span><span class="mono" id="google-email">—</span></div>
+        <div class="row-between small mt-1"><span class="faint">Mode</span><span id="google-mode">—</span></div>
+      </section>
+      <section class="card card-pad">
+        <h3>Quick checklist</h3>
+        <div class="stack mt-2" style="gap:8px">
+          <div class="small">1. Share each destination folder with the service account as <b>Editor</b>.</div>
+          <div class="small">2. Enable domain-wide delegation for the Drive scope.</div>
+          <div class="small">3. Use an impersonation email that owns or can access the folders.</div>
+          <div class="small">4. Run <b>Test connection</b> after saving.</div>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div id="tab-telegram" class="tab-panel">
+  <div class="grid split-grid" id="tg-grid">
+    <section class="card">
+      <div class="card-head"><h2>Telegram bot</h2><span id="tg-status" class="badge">Loading…</span></div>
+      <form class="card-body stack" id="telegram-form">
+        <div class="field"><label>Bot token</label><input class="input" id="tg-token" type="password" placeholder="123456:ABC… (leave blank to keep existing)"></div>
+        <div class="form-grid">
+          <div class="field"><label>Group / chat ID</label><input class="input" id="tg-group" placeholder="-1001234567890"></div>
+          <div class="field"><label>Alert chat ID <span class="hint">(defaults to group)</span></label><input class="input" id="tg-alert-chat" placeholder="-1001234567890"></div>
+          <div class="field span-2"><label>Allowed Telegram user IDs <span class="hint">(comma separated, blank = anyone in the group)</span></label><input class="input" id="tg-allowed" placeholder="12345678, 87654321"></div>
+          <div class="field span-2"><label>Trigger word <span class="hint">(e.g. tk → /tk, or ttp for a campus agent)</span></label><input class="input" id="tg-trigger" placeholder="tk" autocomplete="off"><span class="tiny faint">Changes apply immediately; the bot reloads without a container restart. <code class="kbd">/tk</code> always stays available for existing chats.</span></div>
+        </div>
+        <div class="row" style="gap:18px">
+          <label class="switch"><input type="checkbox" id="tg-alerts" checked><span class="track"></span><span class="small">Health alerts</span></label>
+          <label class="switch"><input type="checkbox" id="tg-miniapp" checked><span class="track"></span><span class="small">Telegram MiniApp</span></label>
+        </div>
+        <div class="quiet-hours">
+          <label class="switch"><input type="checkbox" id="tg-mute"><span class="track"></span><span class="small">Pause Telegram alerts during quiet hours</span></label>
+          <div class="form-grid mt-2">
+            <div class="field"><label>Quiet hours start</label><input class="input" id="tg-mute-start" type="time" value="17:00"></div>
+            <div class="field"><label>Quiet hours end</label><input class="input" id="tg-mute-end" type="time" value="07:00"></div>
+          </div>
+          <p class="tiny faint mt-1" id="tg-mute-hint">Default window: 5:00 PM → 7:00 AM. Alerts are still stored and shown in <b>Alerts</b>; only Telegram delivery pauses. <span id="tg-mute-active"></span></p>
+        </div>
+        <div class="row-between">
+          <button type="button" class="btn btn-ghost" id="tg-test">Send test message</button>
+          <button type="submit" class="btn" id="tg-save" {% if not is_superadmin %}disabled{% endif %}>Save Telegram settings</button>
+        </div>
+      </form>
+    </section>
+    <aside class="stack">
+      <section class="card card-pad">
+        <h3>MiniApp link</h3>
+        <p class="tiny faint mt-1">Use <code class="kbd">/tkbaboy</code> in Telegram, or share this URL:</p>
+        <div class="copy-field mt-2"><code id="miniapp-url">—</code><button class="icon-btn" data-copy="" id="copy-miniapp" title="Copy">⧉</button></div>
+        <a class="btn btn-soft btn-block mt-2" href="/miniapp" target="_blank">Preview MiniApp</a>
+      </section>
+      <section class="card card-pad">
+        <h3>Bot commands</h3>
+        <div class="stack mt-2" style="gap:7px">
+          <div class="small"><code class="kbd">/<span class="tg-command">tk</span></code> reply to a request</div>
+          <div class="small"><code class="kbd">/<span class="tg-command">tk</span> folder_name</code> custom folder</div>
+          <div class="small"><code class="kbd">/tkbaboy</code> open MiniApp</div>
+          <div class="small"><code class="kbd">/health</code> NVR health summary</div>
+          <div class="small"><code class="kbd">/id</code> show chat ID</div>
+        </div>
+        <p class="tiny faint mt-2">Token and trigger-word changes are applied live — no container restart needed. Agent trigger words (set on the Agents page) route requests to that campus only.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div id="tab-smtp" class="tab-panel">
+  <div class="grid split-grid" id="smtp-grid">
+    <section class="card">
+      <div class="card-head"><h2>Email delivery</h2><span id="smtp-status" class="badge">Loading…</span></div>
+      <form class="card-body stack" id="smtp-form">
+        <div class="form-grid">
+          <div class="field"><label>SMTP host</label><input class="input" id="smtp-host" placeholder="smtp.gmail.com"></div>
+          <div class="field"><label>Port</label><input class="input" id="smtp-port" type="number" value="587"></div>
+          <div class="field"><label>Username</label><input class="input" id="smtp-username" placeholder="cctv@footprintsschool.edu.kh"></div>
+          <div class="field"><label>App password</label><input class="input" id="smtp-password" type="password" placeholder="leave blank to keep existing"></div>
+          <div class="field"><label>From email</label><input class="input" id="smtp-from" placeholder="cctv@footprintsschool.edu.kh"></div>
+          <div class="field"><label>From name</label><input class="input" id="smtp-name" placeholder="Footprints CCTV"></div>
+          <div class="field span-2"><label>CC emails <span class="hint">(comma separated)</span></label><input class="input" id="smtp-cc"></div>
+          <div class="field span-2"><label>Approver email</label><input class="input" id="smtp-approver"></div>
+        </div>
+        <label class="switch"><input type="checkbox" id="smtp-enabled" checked><span class="track"></span><span class="small">Enable email sending</span></label>
+        <div class="row-between">
+          <button type="submit" class="btn" id="smtp-save" {% if not is_superadmin %}disabled{% endif %}>Save email settings</button>
+        </div>
+      </form>
+    </section>
+    <aside class="stack">
+      <section class="card card-pad">
+        <h3>Test email</h3>
+        <p class="tiny faint mt-1">Save first, then send a test email.</p>
+        <div class="field mt-2"><label>Recipient</label><input class="input" id="smtp-test-recipient" placeholder="you@footprintsschool.edu.kh"></div>
+        <button class="btn btn-ghost btn-block mt-2" id="smtp-test">Send test email</button>
+      </section>
+      <section class="card card-pad">
+        <h3>Requester approvals</h3>
+        <p class="small muted mt-1">The approver receives a separate review email with the Drive link. CC recipients are added to every footage email.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div id="tab-folders" class="tab-panel">
+  <section class="card">
+    <div class="card-head">
+      <h2>Google Drive destination folders</h2>
+      <button class="btn btn-sm" id="add-folder" {% if not is_admin %}disabled{% endif %}>Add folder</button>
+    </div>
+    <div class="table-wrap" id="folders-table"><div class="card-body"><div class="skeleton" style="height:120px"></div></div></div>
+  </section>
+</div>
+
+<!-- Folder modal -->
+<div class="modal-backdrop" id="folder-modal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="folder-modal-title">Add Drive folder</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <form id="folder-form">
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field"><label>Key <span class="hint">(e.g. TK_ECP)</span></label><input class="input" name="key" required placeholder="TK_ECP"></div>
+          <div class="field"><label>Display name</label><input class="input" name="name" placeholder="TK ECP"></div>
+          <div class="field"><label>Campus</label><input class="input" name="campus" placeholder="tk"></div>
+          <div class="field"><label>Google folder ID</label><input class="input" name="folder_id" required placeholder="1AbC…"></div>
+        </div>
+        <label class="switch mt-2"><input type="checkbox" name="enabled" checked><span class="track"></span><span class="small">Enabled</span></label>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-modal-close>Cancel</button><button class="btn" type="submit">Save folder</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let status = null;
+  let folders = [];
+  let editingFolder = null;
+
+  function setBadge(id, ok, text) {
+    const el = document.getElementById(id);
+    el.className = 'badge ' + (ok ? 'badge-success' : 'badge-danger');
+    el.textContent = text || (ok ? 'Connected' : 'Not configured');
+  }
+
+  async function load() {
+    const [s, f] = await Promise.all([App.api('/api/integrations'), App.api('/api/folders')]);
+    status = s; folders = f.folders;
+    const g = s.google, t = s.telegram, m = s.smtp;
+    setBadge('google-status', g.configured, g.configured ? 'Configured' : 'Not configured');
+    document.getElementById('google-email').textContent = g.client_email || '—';
+    document.getElementById('google-current').textContent = g.configured ? 'current key is stored encrypted' : 'no key stored';
+    document.getElementById('google-impersonate').value = g.impersonate_email || '';
+    document.getElementById('google-expiry').value = g.share_expiry_days || 30;
+    document.getElementById('google-fallback').value = g.fallback_folder_id || '';
+    document.getElementById('google-upload').checked = !!g.upload_enabled;
+    document.getElementById('google-mode').textContent = g.upload_enabled ? 'Uploads enabled' : 'Uploads disabled';
+
+    setBadge('tg-status', t.configured, t.configured ? 'Configured' : 'Not configured');
+    document.getElementById('tg-group').value = t.group_id || '';
+    document.getElementById('tg-alert-chat').value = t.alert_chat_id || '';
+    document.getElementById('tg-allowed').value = t.allowed_user_ids || '';
+    document.getElementById('tg-trigger').value = t.trigger_word || 'tk';
+    document.querySelectorAll('.tg-command').forEach((el) => { el.textContent = t.trigger_word || 'tk'; });
+    document.getElementById('tg-alerts').checked = !!t.alerts_enabled;
+    document.getElementById('tg-miniapp').checked = !!t.miniapp_enabled;
+    document.getElementById('tg-mute').checked = !!t.alert_mute_enabled;
+    document.getElementById('tg-mute-start').value = t.alert_mute_start || '17:00';
+    document.getElementById('tg-mute-end').value = t.alert_mute_end || '07:00';
+    document.getElementById('tg-mute-active').innerHTML = t.alert_mute_active
+      ? '<span class="badge badge-warning no-dot">Paused right now</span>'
+      : '';
+    const publicUrl = '{{ public_url }}';
+    const miniUrl = publicUrl.replace(/\/$/, '') + '/miniapp';
+    document.getElementById('miniapp-url').textContent = miniUrl;
+    document.getElementById('copy-miniapp').setAttribute('data-copy', miniUrl);
+
+    setBadge('smtp-status', m.configured, m.configured ? 'Configured' : 'Not configured');
+    document.getElementById('smtp-host').value = m.host || '';
+    document.getElementById('smtp-port').value = m.port || 587;
+    document.getElementById('smtp-username').value = m.username || '';
+    document.getElementById('smtp-from').value = m.from_email || '';
+    document.getElementById('smtp-name').value = m.from_name || '';
+    document.getElementById('smtp-cc').value = m.cc_emails || '';
+    document.getElementById('smtp-approver').value = m.approver_email || '';
+    document.getElementById('smtp-enabled').checked = !!m.enabled;
+    renderFolders();
+  }
+
+  function renderFolders() {
+    const host = document.getElementById('folders-table');
+    if (!folders.length) { host.innerHTML = App.emptyState('No destination folders configured.', ''); return; }
+    host.innerHTML = `<table><thead><tr><th>Key</th><th>Name</th><th>Campus</th><th class="hide-mobile">Drive folder ID</th><th>Status</th><th></th></tr></thead><tbody>${folders.map((f) => `<tr>
+      <td><span class="chip">${App.escapeHtml(f.key)}</span></td>
+      <td>${App.escapeHtml(f.name)}</td>
+      <td class="tiny">${App.escapeHtml((f.campus || '').toUpperCase())}</td>
+      <td class="hide-mobile mono tiny">${App.escapeHtml((f.folder_id || '').slice(0, 26))}…</td>
+      <td>${f.enabled ? '<span class="badge badge-success">Enabled</span>' : '<span class="badge">Disabled</span>'}</td>
+      <td><div class="actions"><button class="btn btn-ghost btn-xs" data-edit-folder="${f.id}">Edit</button><button class="btn btn-ghost btn-xs" style="color:var(--danger)" data-del-folder="${f.id}">Delete</button></div></td>
+    </tr>`).join('')}</tbody></table>`;
+    host.querySelectorAll('[data-edit-folder]').forEach((b) => b.addEventListener('click', () => openFolder(Number(b.getAttribute('data-edit-folder')))));
+    host.querySelectorAll('[data-del-folder]').forEach((b) => b.addEventListener('click', () => deleteFolder(Number(b.getAttribute('data-del-folder')))));
+  }
+
+  // Google save
+  document.getElementById('google-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('google-save'); btn.disabled = true;
+    try {
+      const body = {
+        impersonate_email: document.getElementById('google-impersonate').value.trim(),
+        fallback_folder_id: document.getElementById('google-fallback').value.trim(),
+        share_expiry_days: Number(document.getElementById('google-expiry').value || 30),
+        upload_enabled: document.getElementById('google-upload').checked,
+      };
+      const json = document.getElementById('google-json').value.trim();
+      if (json) body.service_account_json = json;
+      await App.api('/api/integrations/google', { method: 'PUT', body });
+      App.toast('Google settings saved', 'success');
+      document.getElementById('google-json').value = '';
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('google-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const form = new FormData(); form.append('file', file);
+    try { const r = await App.api('/api/integrations/google/upload', { method: 'POST', body: form }); App.toast(r.message || 'Credential uploaded', 'success'); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+    e.target.value = '';
+  });
+  const drop = document.getElementById('google-drop');
+  drop.addEventListener('click', () => document.getElementById('google-file').click());
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('drag'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+  drop.addEventListener('drop', async (e) => {
+    e.preventDefault(); drop.classList.remove('drag');
+    const file = e.dataTransfer.files[0]; if (!file) return;
+    const form = new FormData(); form.append('file', file);
+    try { const r = await App.api('/api/integrations/google/upload', { method: 'POST', body: form }); App.toast(r.message || 'Credential uploaded', 'success'); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+  });
+  document.getElementById('google-test').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Testing…';
+    try { const r = await App.api('/api/integrations/google/test', { method: 'POST' }); App.toast(r.message, r.ok ? 'success' : 'error'); }
+    catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Test connection'; }
+  });
+
+  // Telegram
+  document.getElementById('telegram-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('tg-save'); btn.disabled = true;
+    try {
+      await App.api('/api/integrations/telegram', { method: 'PUT', body: {
+        bot_token: document.getElementById('tg-token').value.trim() || null,
+        group_id: document.getElementById('tg-group').value.trim(),
+        alert_chat_id: document.getElementById('tg-alert-chat').value.trim(),
+        allowed_user_ids: document.getElementById('tg-allowed').value.trim(),
+        trigger_word: document.getElementById('tg-trigger').value.trim(),
+        alerts_enabled: document.getElementById('tg-alerts').checked,
+        alert_mute_enabled: document.getElementById('tg-mute').checked,
+        alert_mute_start: document.getElementById('tg-mute-start').value || '17:00',
+        alert_mute_end: document.getElementById('tg-mute-end').value || '07:00',
+        miniapp_enabled: document.getElementById('tg-miniapp').checked,
+      }});
+      App.toast('Telegram settings saved', 'success');
+      document.getElementById('tg-token').value = '';
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+  document.getElementById('tg-test').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Sending…';
+    try { const r = await App.api('/api/integrations/telegram/test', { method: 'POST' }); App.toast(r.message, r.ok ? 'success' : 'error'); }
+    catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Send test message'; }
+  });
+
+  // SMTP
+  document.getElementById('smtp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('smtp-save'); btn.disabled = true;
+    try {
+      await App.api('/api/integrations/smtp', { method: 'PUT', body: {
+        enabled: document.getElementById('smtp-enabled').checked,
+        host: document.getElementById('smtp-host').value.trim(),
+        port: Number(document.getElementById('smtp-port').value || 587),
+        username: document.getElementById('smtp-username').value.trim(),
+        password: document.getElementById('smtp-password').value || null,
+        from_email: document.getElementById('smtp-from').value.trim(),
+        from_name: document.getElementById('smtp-name').value.trim(),
+        cc_emails: document.getElementById('smtp-cc').value.trim(),
+        approver_email: document.getElementById('smtp-approver').value.trim(),
+      }});
+      App.toast('Email settings saved', 'success');
+      document.getElementById('smtp-password').value = '';
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+  document.getElementById('smtp-test').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      const r = await App.api('/api/integrations/smtp/test', { method: 'POST', body: { recipient: document.getElementById('smtp-test-recipient').value.trim() } });
+      App.toast(r.message, r.ok ? 'success' : 'error');
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Send test email'; }
+  });
+
+  // Folders
+  function openFolder(id) {
+    editingFolder = id || null;
+    const form = document.getElementById('folder-form'); form.reset();
+    document.getElementById('folder-modal-title').textContent = id ? 'Edit Drive folder' : 'Add Drive folder';
+    if (id) {
+      const f = folders.find((x) => x.id === id);
+      if (!f) return;
+      form.key.value = f.key; form.name.value = f.name; form.campus.value = f.campus || ''; form.folder_id.value = f.folder_id;
+      form.querySelector('[name=enabled]').checked = f.enabled;
+    }
+    App.modal('folder-modal').open();
+  }
+  document.getElementById('add-folder').addEventListener('click', () => openFolder(null));
+  document.getElementById('folder-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const body = { key: data.get('key'), name: data.get('name'), campus: data.get('campus'), folder_id: data.get('folder_id'), enabled: e.target.querySelector('[name=enabled]').checked };
+    try {
+      if (editingFolder) await App.api(`/api/folders/${editingFolder}`, { method: 'PATCH', body });
+      else await App.api('/api/folders', { method: 'POST', body });
+      App.toast('Folder saved', 'success'); App.modal('folder-modal').close(); await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+  });
+  async function deleteFolder(id) {
+    if (!await App.confirm('Remove this destination folder? Existing Drive files are not touched.', { danger: true, confirm: 'Delete' })) return;
+    try { await App.api(`/api/folders/${id}`, { method: 'DELETE' }); App.toast('Folder removed', 'success'); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+  }
+
+  document.getElementById('miniapp-url').addEventListener('click', () => App.copyText(document.getElementById('miniapp-url').textContent));
+  load().catch((err) => App.toast(err.message, 'error'));
+</script>
+{% endblock %}

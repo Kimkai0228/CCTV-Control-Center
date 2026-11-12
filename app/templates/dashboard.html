@@ -1,0 +1,753 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block subheading %}Live overview of cameras, jobs and NVR health{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-ghost btn-sm" id="refresh-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+    Refresh
+  </button>
+  <a class="btn btn-sm" href="/footage">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    New request
+  </a>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-4" id="stats">
+  {% for i in range(4) %}
+  <div class="card stat-card"><div class="skeleton" style="height:40px;width:40px;margin-bottom:14px"></div><div class="skeleton" style="height:28px;width:60%"></div><div class="skeleton mt-2" style="height:12px;width:45%"></div></div>
+  {% endfor %}
+</div>
+
+<section class="card mt-3" id="reports-card">
+  <div class="card-head">
+    <div>
+      <h2>Reports</h2>
+      <span class="sub" id="reports-sub">Shared with every user · each chart has its own range</span>
+    </div>
+    <div class="row" style="gap:6px">
+      <button class="btn btn-ghost btn-sm" id="reports-refresh">Refresh</button>
+      {% if is_admin %}<button class="btn btn-sm" id="reports-customize">Customize</button>{% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="reports-grid" id="reports-grid">
+      <div class="report-widget"><div class="skeleton" style="height:210px"></div></div>
+      <div class="report-widget"><div class="skeleton" style="height:210px"></div></div>
+    </div>
+  </div>
+</section>
+
+<div class="grid mt-3 dash-grid" id="dash-grid">
+  <div class="stack">
+    <section class="card">
+      <div class="card-head">
+        <h2>NVR health</h2>
+        <span class="sub" id="health-updated">—</span>
+        <button class="btn btn-ghost btn-sm" id="run-health">Run check</button>
+      </div>
+      <div class="card-body">
+        <div class="health-grid" id="nvr-health">
+          <div class="skeleton" style="height:130px"></div>
+          <div class="skeleton" style="height:130px"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Recent jobs</h2><a class="btn-link" href="/jobs">View all →</a></div>
+      <div class="table-wrap" id="recent-jobs"></div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="card">
+      <div class="card-head"><h2>Open alerts</h2><span class="badge badge-danger no-dot" id="alert-count">0</span></div>
+      <div class="card-body tight stack" id="alerts-list" style="gap:8px"></div>
+      <div class="card-body" style="padding-top:0"><a class="btn btn-ghost btn-block btn-sm" href="/alerts">Manage alerts</a></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>System</h2><span class="badge no-dot" id="sys-cpu">—</span></div>
+      <div class="card-body stack" style="gap:16px">
+        <div>
+          <div class="progress-label"><span>Server disk</span><span id="disk-label">—</span></div>
+          <div class="progress"><i id="disk-bar" style="width:0%"></i></div>
+        </div>
+        <div>
+          <div class="progress-label"><span>Memory</span><span id="mem-label">—</span></div>
+          <div class="progress"><i id="mem-bar" style="width:0%"></i></div>
+        </div>
+        <div class="row-between small">
+          <span class="faint">Load average</span><span class="mono" id="load-avg">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Video compression</h2></div>
+      <div class="card-body">
+        <div class="row" style="gap:12px">
+          <span class="stat-icon" style="margin:0;width:44px;height:44px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-3 7h5l-3 7"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
+          </span>
+          <div style="flex:1">
+            <div class="strong" id="qsv-title">Checking…</div>
+            <div class="tiny faint" id="qsv-detail">Detecting Intel QuickSync</div>
+          </div>
+          <span class="badge" id="qsv-badge">…</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card card-pad">
+      <div class="row-between">
+        <div>
+          <h3>Telegram MiniApp</h3>
+          <p class="tiny faint mt-1">Open the mobile downloader from Telegram.</p>
+        </div>
+        <a class="btn btn-soft btn-sm" href="/miniapp" target="_blank">Open</a>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="reports-modal">
+  <div class="modal wide">
+    <div class="modal-head"><h2>Customize dashboard</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <div class="modal-body">
+      <p class="tiny faint">Charts are saved for every user. Only superadmins and admins can change this layout.</p>
+      <div id="reports-editor" class="stack mt-3" style="gap:12px"></div>
+      <div class="row mt-3" style="gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="add-pie">+ Pie chart</button>
+        <button class="btn btn-ghost btn-sm" id="add-area">+ Area chart</button>
+        <button class="btn btn-ghost btn-sm" id="reset-reports">Reset default</button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-modal-close>Cancel</button>
+      <button class="btn" id="save-reports">Save layout</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const ICONS = {
+    nvr: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+    cam: '<path d="M3 8h11v8H3z"/><path d="m14 11 7-4v10l-7-4z"/>',
+    job: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>',
+    alert: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  };
+  function stat(icon, value, label, delta, deltaClass) {
+    return `<div class="card stat-card">
+      <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[icon]}</svg></span>
+      <div class="stat-value">${value}</div>
+      <div class="stat-label">${label}</div>
+      ${delta ? `<div class="stat-delta ${deltaClass || ''}">${delta}</div>` : ''}
+    </div>`;
+  }
+
+  function renderStats(d) {
+    const s = d.summary;
+    document.getElementById('stats').innerHTML = [
+      stat('nvr', `${s.nvr_online}<span style="font-size:.9rem;color:var(--text-faint)">/${s.nvr_total}</span>`, 'NVRs online', s.nvr_offline ? `${s.nvr_offline} offline` : 'All reachable', s.nvr_offline ? 'bad' : 'ok'),
+      stat('cam', s.cameras, 'Cameras', s.cameras_offline ? `${s.cameras_offline} offline` : 'All reporting', s.cameras_offline ? 'bad' : 'ok'),
+      stat('job', s.active_jobs, 'Active jobs', `${s.jobs_today} started today`),
+      stat('alert', s.open_alerts, 'Open alerts', s.critical_alerts ? `${s.critical_alerts} critical` : 'No critical alerts', s.critical_alerts ? 'bad' : 'ok'),
+    ].join('');
+  }
+
+  function renderHealth(nvrs, compression) {
+    const host = document.getElementById('nvr-health');
+    if (!nvrs.length) {
+      host.innerHTML = App.emptyState('No NVRs configured yet. Add one in NVRs & cameras.', ICONS.nvr);
+      return;
+    }
+    host.innerHTML = nvrs.map((n) => {
+      const hdd = n.hdd_used_percent == null ? '—' : `${Math.round(n.hdd_used_percent)}%`;
+      const hddClass = n.hdd_used_percent >= 90 ? 'color:var(--danger)' : n.hdd_used_percent >= 75 ? 'color:var(--warning)' : '';
+      return `<div class="card nvr-card">
+        <div class="top">
+          <span class="stat-icon" style="margin:0;width:36px;height:36px;border-radius:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS.nvr}</svg></span>
+          <div style="flex:1;min-width:0">
+            <div class="name truncate">${App.escapeHtml(n.name)}</div>
+            <div class="meta">${App.escapeHtml((n.campus || '').toUpperCase())} · ${App.escapeHtml((n.zone || '').replaceAll('_',' '))}</div>
+          </div>
+          ${App.statusBadge(n.status)}
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="v">${n.camera_count}</div><div class="l">Cameras</div></div>
+          <div class="metric"><div class="v" style="${hddClass}">${hdd}</div><div class="l">HDD used</div></div>
+        </div>
+        ${n.offline_cameras ? `<div class="tiny mt-2" style="color:var(--danger)">${n.offline_cameras} camera(s) offline</div>` : ''}
+        <div class="tiny faint mt-2">Checked ${App.timeAgo(n.last_checked)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderJobs(jobs) {
+    const host = document.getElementById('recent-jobs');
+    if (!jobs.length) { host.innerHTML = App.emptyState('No jobs yet. Start your first footage request.', ICONS.job); return; }
+    host.innerHTML = `<table><thead><tr><th>Job</th><th class="hide-mobile">Source</th><th>Status</th><th>Created</th></tr></thead><tbody>` +
+      jobs.map((j) => `<tr>
+        <td><a href="/jobs?job=${j.id}" class="job-title"><b>${App.escapeHtml(j.folder_name || j.ref)}</b></a><div class="tiny faint">${j.ref}</div></td>
+        <td class="hide-mobile"><span class="chip">${App.escapeHtml(j.source)}</span></td>
+        <td>${App.statusBadge(j.status)}${['running','queued','dispatched'].includes(j.status) ? `<div class="progress thin mt-1"><i style="width:${j.progress}%"></i></div>` : ''}</td>
+        <td class="tiny faint">${App.timeAgo(j.created_at)}</td>
+      </tr>`).join('') + `</tbody></table>`;
+  }
+
+  function renderAlerts(alerts) {
+    const host = document.getElementById('alerts-list');
+    document.getElementById('alert-count').textContent = alerts.length;
+    if (!alerts.length) { host.innerHTML = App.emptyState('No open alerts. Everything looks healthy.', ICONS.alert); return; }
+    host.innerHTML = alerts.map((a) => `<div class="alert-row ${a.severity}">
+      <span class="dot"></span>
+      <div class="msg">${App.escapeHtml(a.message)}<div class="tiny faint mt-1">${App.escapeHtml(a.nvr || '')} · ${App.timeAgo(a.created_at)}</div></div>
+    </div>`).join('');
+  }
+
+  function renderCompression(c) {
+    document.getElementById('qsv-title').textContent = c.available ? 'Intel QuickSync ready' : 'Software encoding';
+    document.getElementById('qsv-detail').textContent = c.available ? (c.detail || 'Hardware acceleration active') : (c.detail || 'libx264 fallback active');
+    const badge = document.getElementById('qsv-badge');
+    badge.className = 'badge ' + (c.available ? 'badge-success' : 'badge-warning');
+    badge.textContent = c.available ? 'GPU' : 'CPU';
+  }
+
+  function renderSystem(sys) {
+    document.getElementById('disk-label').textContent = `${sys.disk_used_percent}% of ${App.fmtBytes(sys.disk_total)}`;
+    document.getElementById('disk-bar').style.width = Math.min(100, sys.disk_used_percent) + '%';
+    document.getElementById('mem-label').textContent = `${sys.memory_used_percent}% of ${App.fmtBytes(sys.memory_total)}`;
+    document.getElementById('mem-bar').style.width = Math.min(100, sys.memory_used_percent) + '%';
+    document.getElementById('load-avg').textContent = `${sys.load_1} / ${sys.load_5} / ${sys.load_15}`;
+    document.getElementById('sys-cpu').textContent = `${sys.cpu_count} CPU`;
+  }
+
+  // ---------------------------------------------------------------- reports
+  const CHART_COLORS = ['#424874', '#A6B1E1', '#7c8bd1', '#4f74c8', '#2f9e6e', '#c47b18', '#c94b5d', '#5aa9a3', '#b07cc6', '#8e9ad4'];
+  const REPORT_METRICS = {
+    pie: [
+      ['source', 'Jobs by source'],
+      ['campus', 'Jobs by campus'],
+      ['status', 'Jobs by status'],
+      ['agent', 'Local vs campus agent'],
+    ],
+    area: [
+      ['total', 'Total requests'],
+      ['source', 'Requests by source'],
+      ['campus', 'Requests by campus'],
+      ['status', 'Requests by status'],
+      ['agent', 'Local vs campus agent'],
+    ],
+  };
+  const REPORT_DAYS = [7, 14, 30, 90];
+  const REPORT_AUTO_TITLES = [
+    'Jobs by source', 'Jobs by campus', 'Jobs by status', 'Local vs campus agent',
+    'Total requests', 'Requests by source', 'Requests by campus', 'Requests by status',
+    'Requests over time',
+  ];
+  let reportConfig = [];
+  let reportDefaults = [];
+  let draftConfig = [];
+  let relativeDataset = null;
+  let relativeAt = 0;
+  const customDatasets = new Map(); // "start|end" -> { data, at }
+  const DATA_TTL = 120000;
+  const canCustomizeReports = {% if is_admin %}true{% else %}false{% endif %};
+
+  function deepCopy(value) { return JSON.parse(JSON.stringify(value || [])); }
+  function sumValues(values) { return (values || []).reduce((total, value) => total + Number(value || 0), 0); }
+  function lastItems(list, count) { return (list || []).slice(Math.max(0, (list || []).length - count)); }
+
+  function isoDate(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+  function daysAgoIso(count) {
+    const date = new Date();
+    date.setDate(date.getDate() - count);
+    return isoDate(date);
+  }
+  function isCustomRange(config) {
+    return config.range === 'custom' && !!config.start_date && !!config.end_date;
+  }
+  function customKey(config) { return `${config.start_date}|${config.end_date}`; }
+  function datasetFor(config) {
+    if (isCustomRange(config)) {
+      const entry = customDatasets.get(customKey(config));
+      return entry ? entry.data : null;
+    }
+    return relativeDataset;
+  }
+  function seriesFor(values, config) {
+    return isCustomRange(config) ? (values || []) : lastItems(values, config.days);
+  }
+  function shortDate(iso) {
+    const parts = String(iso || '').split('-');
+    if (parts.length !== 3) return String(iso || '');
+    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  function rangeLabel(config) {
+    if (isCustomRange(config)) return `${shortDate(config.start_date)} – ${shortDate(config.end_date)}`;
+    return `last ${config.days} days`;
+  }
+  function rangePhrase(config) {
+    return isCustomRange(config) ? 'in ' + rangeLabel(config) : 'in the last ' + config.days + ' days';
+  }
+  function normalizeClientReport(config) {
+    return Object.assign({ range: 'days', start_date: null, end_date: null, days: 30, span: 1 }, config || {});
+  }
+
+  function colorMap(data, metric) {
+    const keys = (((data || {}).dimensions || {})[metric] || []).map((item) => item.key);
+    const map = {};
+    keys.forEach((key, index) => { map[key] = CHART_COLORS[index % CHART_COLORS.length]; });
+    return map;
+  }
+
+  function dimensionLabels(data, metric) {
+    const map = {};
+    (((data || {}).dimensions || {})[metric] || []).forEach((item) => { map[item.key] = item.label; });
+    return map;
+  }
+
+  function pieSlices(config) {
+    const data = datasetFor(config) || {};
+    const groups = (data.timeline || {})[config.metric] || {};
+    const labels = dimensionLabels(data, config.metric);
+    const colors = colorMap(data, config.metric);
+    return Object.keys(groups).map((key, index) => ({
+      key,
+      label: labels[key] || key.replaceAll('_', ' '),
+      value: sumValues(seriesFor(groups[key], config)),
+      color: colors[key] || CHART_COLORS[index % CHART_COLORS.length],
+    })).filter((slice) => slice.value > 0).sort((a, b) => b.value - a.value);
+  }
+
+  function areaSeries(config) {
+    const data = datasetFor(config) || {};
+    const timeline = data.timeline || {};
+    const labels = dimensionLabels(data, config.metric);
+    if (config.metric === 'total') {
+      return [{ key: 'total', label: 'Requests', values: seriesFor(timeline.total || [], config), color: CHART_COLORS[0] }];
+    }
+    const groups = timeline[config.metric] || {};
+    const colors = colorMap(data, config.metric);
+    return Object.keys(groups).map((key, index) => ({
+      key,
+      label: labels[key] || key.replaceAll('_', ' '),
+      values: seriesFor(groups[key], config),
+      color: colors[key] || CHART_COLORS[index % CHART_COLORS.length],
+    })).filter((series) => sumValues(series.values) > 0)
+      .sort((a, b) => sumValues(b.values) - sumValues(a.values));
+  }
+
+  function shortDay(iso) {
+    const parts = String(iso || '').split('-');
+    if (parts.length !== 3) return String(iso || '');
+    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  function niceMax(value) {
+    if (!value || value <= 0) return 1;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+    const normal = value / magnitude;
+    const nice = normal <= 1 ? 1 : normal <= 2 ? 2 : normal <= 5 ? 5 : 10;
+    return nice * magnitude;
+  }
+
+  function emptyChart(message) {
+    return `<div class="report-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/></svg><span>${App.escapeHtml(message)}</span></div>`;
+  }
+
+  function pieChart(config) {
+    const slices = pieSlices(config);
+    const total = sumValues(slices.map((slice) => slice.value));
+    if (!total) return emptyChart('No jobs ' + rangePhrase(config));
+    const cx = 90, cy = 90, radius = 72, inner = 44;
+    let angle = -Math.PI / 2;
+    let svg;
+    if (slices.length === 1) {
+      svg = `<circle cx="${cx}" cy="${cy}" r="${(radius + inner) / 2}" fill="none" stroke="${slices[0].color}" stroke-width="${radius - inner}"/>`;
+    } else {
+      svg = slices.map((slice) => {
+        const sweep = (slice.value / total) * Math.PI * 2;
+        const start = angle;
+        const end = angle + sweep;
+        angle = end;
+        const large = sweep > Math.PI ? 1 : 0;
+        const point = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+        const [x0, y0] = point(radius, start);
+        const [x1, y1] = point(radius, end);
+        const [x2, y2] = point(inner, end);
+        const [x3, y3] = point(inner, start);
+        return `<path d="M${x0},${y0} A${radius},${radius} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${inner},${inner} 0 ${large} 0 ${x3},${y3} Z" fill="${slice.color}"><title>${App.escapeHtml(slice.label)}: ${slice.value}</title></path>`;
+      }).join('');
+    }
+    const legend = slices.map((slice) => `<div class="legend-item">
+      <span class="legend-dot" style="background:${slice.color}"></span>
+      <span class="truncate">${App.escapeHtml(slice.label)}</span>
+      <span class="legend-value">${slice.value}<span class="faint"> · ${Math.round((slice.value / total) * 100)}%</span></span>
+    </div>`).join('');
+    return `<div class="pie-wrap">
+      <svg class="chart-svg pie-svg" viewBox="0 0 180 180" role="img" aria-label="${App.escapeHtml(config.metric)} pie chart">
+        ${svg}
+        <text x="${cx}" y="${cy - 4}" text-anchor="middle" class="chart-total">${total}</text>
+        <text x="${cx}" y="${cy + 14}" text-anchor="middle" class="chart-total-label">requests</text>
+      </svg>
+      <div class="chart-legend">${legend}</div>
+    </div>`;
+  }
+
+  function areaChart(config) {
+    const data = datasetFor(config) || {};
+    const labels = seriesFor((data.timeline || {}).labels || [], config);
+    const series = areaSeries(config);
+    const count = labels.length;
+    if (!series.length || !count) return emptyChart('No activity ' + rangePhrase(config));
+
+    const running = new Array(count).fill(0);
+    const layers = series.map((item) => {
+      const top = item.values.map((value, index) => (running[index] += Number(value || 0)));
+      const bottom = top.map((value, index) => value - Number(item.values[index] || 0));
+      return Object.assign({}, item, { top, bottom });
+    });
+    const peak = Math.max(...layers.map((layer) => Math.max(...layer.top)), 0);
+    if (!peak) return emptyChart('No activity ' + rangePhrase(config));
+
+    const width = 420, height = 220, padL = 36, padR = 12, padT = 14, padB = 30;
+    const innerW = width - padL - padR;
+    const innerH = height - padT - padB;
+    const yMax = niceMax(peak);
+    const x = (index) => padL + (count === 1 ? innerW / 2 : (index * innerW) / (count - 1));
+    const y = (value) => padT + innerH * (1 - value / yMax);
+
+    const grid = [0, 1, 2, 3, 4].map((step) => {
+      const value = (yMax / 4) * step;
+      const pos = y(value);
+      return `<line x1="${padL}" y1="${pos}" x2="${width - padR}" y2="${pos}" class="chart-grid-line"/>
+        <text x="${padL - 6}" y="${pos + 3}" text-anchor="end" class="chart-axis-text">${Math.round(value)}</text>`;
+    }).join('');
+
+    const areas = layers.map((layer) => {
+      const topPoints = layer.top.map((value, index) => `${x(index)},${y(value)}`).join(' L');
+      const bottomPoints = layer.bottom.map((value, index) => `${x(index)},${y(value)}`).reverse().join(' L');
+      const line = layer.top.map((value, index) => `${index ? 'L' : 'M'}${x(index)},${y(value)}`).join(' ');
+      return `<path d="M${topPoints} L${bottomPoints} Z" fill="${layer.color}" fill-opacity=".42" stroke="none">
+          <title>${App.escapeHtml(layer.label)}: ${sumValues(layer.values)}</title>
+        </path>
+        <path d="${line}" fill="none" stroke="${layer.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    }).join('');
+
+    const step = Math.max(1, Math.ceil(count / 6));
+    const xLabels = labels.map((label, index) => {
+      if (index % step !== 0 && index !== count - 1) return '';
+      return `<text x="${x(index)}" y="${height - 10}" text-anchor="middle" class="chart-axis-text">${App.escapeHtml(shortDay(label))}</text>`;
+    }).join('');
+
+    const legend = layers.map((layer) => `<div class="legend-item">
+      <span class="legend-dot" style="background:${layer.color}"></span>
+      <span class="truncate">${App.escapeHtml(layer.label)}</span>
+      <span class="legend-value">${sumValues(layer.values)}</span>
+    </div>`).join('');
+
+    return `<div class="area-wrap">
+      <svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${App.escapeHtml(config.metric)} area chart">
+        ${grid}${areas}${xLabels}
+      </svg>
+      <div class="chart-legend chart-legend-row">${legend}</div>
+    </div>`;
+  }
+
+  function reportBody(config) {
+    if (!datasetFor(config)) return `<div class="skeleton" style="height:190px"></div>`;
+    return config.type === 'pie' ? pieChart(config) : areaChart(config);
+  }
+
+  function renderReports() {
+    const host = document.getElementById('reports-grid');
+    if (!host) return;
+    if (!reportConfig.length) {
+      host.innerHTML = `<div class="report-empty" style="grid-column:1/-1"><span>No report charts configured yet.</span>${canCustomizeReports ? '<span class="tiny faint">Use Customize to add one.</span>' : ''}</div>`;
+      return;
+    }
+    host.innerHTML = reportConfig.map((config) => `<article class="report-widget${config.span === 2 ? ' span-2' : ''}">
+      <div class="report-head">
+        <div style="min-width:0">
+          <h3 class="truncate">${App.escapeHtml(config.title)}</h3>
+          <div class="tiny faint">${config.type === 'pie' ? 'Distribution' : 'Trend'} · ${App.escapeHtml(rangeLabel(config))}</div>
+        </div>
+        <span class="badge ${config.type === 'pie' ? 'badge-info' : 'badge-success'}">${config.type === 'pie' ? 'Pie' : 'Area'}</span>
+      </div>
+      <div class="report-chart">${reportBody(config)}</div>
+    </article>`).join('');
+  }
+
+  function metricOptions(type, selected) {
+    return REPORT_METRICS[type].map(([value, label]) =>
+      `<option value="${value}"${value === selected ? ' selected' : ''}>${label}</option>`).join('');
+  }
+
+  function rangeOptions(config) {
+    const current = isCustomRange(config) ? 'custom' : String(config.days);
+    return REPORT_DAYS.map((value) =>
+      `<option value="${value}"${current === String(value) ? ' selected' : ''}>Last ${value} days</option>`).join('') +
+      `<option value="custom"${current === 'custom' ? ' selected' : ''}>Custom range…</option>`;
+  }
+
+  function renderEditor() {
+    const host = document.getElementById('reports-editor');
+    if (!host) return;
+    if (!draftConfig.length) {
+      host.innerHTML = `<div class="report-empty" style="border:1px dashed var(--border-strong)"><span>No charts yet. Add a pie or area chart below.</span></div>`;
+      return;
+    }
+    host.innerHTML = draftConfig.map((config, index) => `<div class="report-editor-row" data-index="${index}">
+      <div class="report-editor-head">
+        <span class="badge ${config.type === 'pie' ? 'badge-info' : 'badge-success'}">${config.type === 'pie' ? 'Pie' : 'Area'}</span>
+        <span class="small faint">Chart ${index + 1}</span>
+        <span style="flex:1"></span>
+        <button type="button" class="icon-btn" data-move="up" title="Move up"${index === 0 ? ' disabled' : ''}>↑</button>
+        <button type="button" class="icon-btn" data-move="down" title="Move down"${index === draftConfig.length - 1 ? ' disabled' : ''}>↓</button>
+        <button type="button" class="icon-btn" data-remove title="Remove">✕</button>
+      </div>
+      <div class="form-grid">
+        <div class="field span-2"><label>Title</label><input class="input" data-field="title" maxlength="80" value="${App.escapeHtml(config.title)}"></div>
+        <div class="field"><label>Chart type</label><select class="select" data-field="type">
+          <option value="pie"${config.type === 'pie' ? ' selected' : ''}>Pie</option>
+          <option value="area"${config.type === 'area' ? ' selected' : ''}>Area</option>
+        </select></div>
+        <div class="field"><label>Data</label><select class="select" data-field="metric">${metricOptions(config.type, config.metric)}</select></div>
+        <div class="field"><label>Time range</label><select class="select" data-field="range_value">${rangeOptions(config)}</select></div>
+        <div class="field"><label>Width</label><select class="select" data-field="span">
+          <option value="1"${config.span === 1 ? ' selected' : ''}>Half width</option>
+          <option value="2"${config.span === 2 ? ' selected' : ''}>Full width</option>
+        </select></div>
+        ${config.range === 'custom' ? `<div class="field"><label>From</label><input class="input" type="date" data-field="start_date" value="${App.escapeHtml(config.start_date || '')}"></div>
+        <div class="field"><label>To</label><input class="input" type="date" data-field="end_date" value="${App.escapeHtml(config.end_date || '')}"></div>` : ''}
+      </div>
+    </div>`).join('');
+  }
+
+  function newReport(type) {
+    const metrics = REPORT_METRICS[type];
+    return {
+      id: 'chart-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      type,
+      metric: metrics[0][0],
+      title: metrics[0][1],
+      days: 30,
+      span: 1,
+      range: 'days',
+      start_date: null,
+      end_date: null,
+    };
+  }
+
+  function relativeDaysNeeded() {
+    const values = reportConfig.filter((config) => !isCustomRange(config)).map((config) => Number(config.days) || 30);
+    if (!values.length) return 7;
+    return Math.max(7, Math.min(90, ...values));
+  }
+
+  async function loadReports(force) {
+    const now = Date.now();
+    const needed = relativeDaysNeeded();
+    if (force || !relativeDataset || now - relativeAt > DATA_TTL) {
+      try {
+        relativeDataset = await App.api(`/api/dashboard/analytics?days=${needed}`);
+        relativeAt = Date.now();
+      } catch (err) {
+        const host = document.getElementById('reports-grid');
+        if (host && !relativeDataset) host.innerHTML = `<div class="report-empty" style="grid-column:1/-1"><span>${App.escapeHtml(err.message)}</span></div>`;
+      }
+    }
+
+    const keys = new Set(reportConfig.filter(isCustomRange).map(customKey));
+    const pending = [];
+    keys.forEach((key) => {
+      const entry = customDatasets.get(key);
+      if (!force && entry && Date.now() - entry.at <= DATA_TTL) return;
+      const [start, end] = key.split('|');
+      pending.push(
+        App.api(`/api/dashboard/analytics?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+          .then((data) => customDatasets.set(key, { data, at: Date.now() }))
+          .catch(() => {})
+      );
+    });
+    if (pending.length) await Promise.allSettled(pending);
+    renderReports();
+  }
+
+  async function saveReports() {
+    for (const config of draftConfig) {
+      if (config.range !== 'custom') continue;
+      if (!config.start_date || !config.end_date) {
+        App.toast('Choose both dates for every custom chart', 'error');
+        return;
+      }
+      if (config.end_date < config.start_date) {
+        App.toast('The end date must be on or after the start date', 'error');
+        return;
+      }
+    }
+    const button = document.getElementById('save-reports');
+    if (button) button.disabled = true;
+    try {
+      const result = await App.api('/api/dashboard/reports', { method: 'PUT', body: { reports: draftConfig } });
+      reportConfig = (result.reports || []).map(normalizeClientReport);
+      reportDefaults = (result.defaults || reportDefaults).map(normalizeClientReport);
+      relativeAt = 0;
+      customDatasets.clear();
+      renderReports();
+      await loadReports(true);
+      const modal = App.modal('reports-modal');
+      if (modal) modal.close();
+      App.toast('Dashboard layout saved for every user', 'success');
+    } catch (err) {
+      App.toast(err.message, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function setupReportEditor() {
+    const grid = document.getElementById('reports-grid');
+    if (!grid) return;
+
+    const customize = document.getElementById('reports-customize');
+    if (customize) {
+      customize.addEventListener('click', () => {
+        draftConfig = deepCopy(reportConfig).map(normalizeClientReport);
+        renderEditor();
+        const modal = App.modal('reports-modal');
+        if (modal) modal.open();
+      });
+    }
+
+    document.getElementById('reports-refresh')?.addEventListener('click', () => loadReports(true));
+
+    document.getElementById('add-pie')?.addEventListener('click', () => {
+      if (draftConfig.length >= 10) { App.toast('At most 10 charts are allowed', 'error'); return; }
+      draftConfig.push(newReport('pie'));
+      renderEditor();
+    });
+    document.getElementById('add-area')?.addEventListener('click', () => {
+      if (draftConfig.length >= 10) { App.toast('At most 10 charts are allowed', 'error'); return; }
+      draftConfig.push(newReport('area'));
+      renderEditor();
+    });
+    document.getElementById('reset-reports')?.addEventListener('click', async () => {
+      if (!await App.confirm('Replace the editor contents with the default two charts?', { confirm: 'Reset' })) return;
+      draftConfig = deepCopy(reportDefaults).map(normalizeClientReport);
+      renderEditor();
+    });
+    document.getElementById('save-reports')?.addEventListener('click', saveReports);
+
+    const editor = document.getElementById('reports-editor');
+    editor?.addEventListener('input', (event) => {
+      const field = event.target.getAttribute('data-field');
+      if (field !== 'title') return;
+      const row = event.target.closest('[data-index]');
+      const config = draftConfig[Number(row.getAttribute('data-index'))];
+      if (config) config.title = event.target.value;
+    });
+    editor?.addEventListener('change', (event) => {
+      const field = event.target.getAttribute('data-field');
+      if (!field) return;
+      const row = event.target.closest('[data-index]');
+      const index = Number(row.getAttribute('data-index'));
+      const config = draftConfig[index];
+      if (!config) return;
+      if (field === 'type') {
+        config.type = event.target.value === 'area' ? 'area' : 'pie';
+        const allowed = REPORT_METRICS[config.type].map(([value]) => value);
+        if (!allowed.includes(config.metric)) config.metric = allowed[0];
+        if (!config.title || REPORT_AUTO_TITLES.includes(config.title)) {
+          config.title = REPORT_METRICS[config.type].find(([value]) => value === config.metric)[1];
+        }
+        renderEditor();
+        return;
+      }
+      if (field === 'range_value') {
+        if (event.target.value === 'custom') {
+          config.range = 'custom';
+          if (!config.start_date) config.start_date = daysAgoIso(29);
+          if (!config.end_date) config.end_date = isoDate(new Date());
+        } else {
+          config.range = 'days';
+          config.days = Number(event.target.value);
+          config.start_date = null;
+          config.end_date = null;
+        }
+        renderEditor();
+        return;
+      }
+      if (field === 'start_date' || field === 'end_date') {
+        config[field] = event.target.value || null;
+        return;
+      }
+      if (field === 'days' || field === 'span') {
+        config[field] = Number(event.target.value);
+        return;
+      }
+      const autoTitle = field === 'metric' && REPORT_AUTO_TITLES.includes(config.title);
+      config[field] = event.target.value;
+      if (autoTitle) {
+        config.title = REPORT_METRICS[config.type].find(([value]) => value === config.metric)[1];
+        renderEditor();
+      }
+    });
+    editor?.addEventListener('click', (event) => {
+      const row = event.target.closest('[data-index]');
+      if (!row) return;
+      const index = Number(row.getAttribute('data-index'));
+      if (event.target.closest('[data-remove]')) {
+        draftConfig.splice(index, 1);
+        renderEditor();
+        return;
+      }
+      const move = event.target.closest('[data-move]');
+      if (move) {
+        const direction = move.getAttribute('data-move') === 'up' ? -1 : 1;
+        const target = index + direction;
+        if (target < 0 || target >= draftConfig.length) return;
+        const [item] = draftConfig.splice(index, 1);
+        draftConfig.splice(target, 0, item);
+        renderEditor();
+      }
+    });
+  }
+
+  async function load() {
+    const d = await App.api('/api/dashboard');
+    renderStats(d);
+    renderHealth(d.nvrs, d.compression);
+    renderJobs(d.recent_jobs);
+    renderAlerts(d.alerts);
+    renderCompression(d.compression);
+    renderSystem(d.system);
+    reportConfig = (d.reports || []).map(normalizeClientReport);
+    reportDefaults = (d.report_defaults || []).map(normalizeClientReport);
+    renderReports();
+    loadReports(false);
+    document.getElementById('health-updated').textContent = d.health.last_checked ? 'Updated ' + App.timeAgo(d.health.last_checked) : 'Not checked yet';
+  }
+
+  setupReportEditor();
+
+  document.getElementById('refresh-btn').addEventListener('click', load);
+  document.getElementById('run-health').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Checking';
+    try { const r = await App.api('/api/health/run', { method: 'POST' }); App.toast(`Checked ${r.checked} NVR(s) · ${r.online} online`, 'success'); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Run check'; }
+  });
+  App.autoRefresh(load, 25000);
+</script>
+{% endblock %}

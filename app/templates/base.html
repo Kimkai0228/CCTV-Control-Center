@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ config.theme or 'light' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="{{ config.colors.primary }}">
+  <title>{% block title %}{{ config.app_name }}{% endblock %} · {{ config.app_name }}</title>
+  <style>
+    :root{
+      --bg: {{ config.colors.background or '#F4EEFF' }};
+      --primary: {{ config.colors.primary or '#424874' }};
+      --secondary: {{ config.colors.secondary or '#A6B1E1' }};
+      --accent: {{ config.colors.accent or '#DCD6F7' }};
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23424874'/><path d='M28 34h32v24H28z' fill='none' stroke='%23fff' stroke-width='5'/><path d='m60 40 14-7v26l-14-7z' fill='%23fff'/></svg>">
+  <script>
+    try {
+      var t = localStorage.getItem('cctv-theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      if (localStorage.getItem('cctv-sidebar') === 'collapsed') {
+        document.documentElement.setAttribute('data-sidebar', 'collapsed');
+      }
+    } catch (e) {}
+  </script>
+</head>
+<body data-page="{{ page }}">
+<div class="app-shell">
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11v8H3z"/><path d="m14 11 7-4v10l-7-4z"/><circle cx="7" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>
+      </span>
+      <span>
+        <span class="brand-name">{{ config.app_name }}</span>
+        <span class="brand-sub">{{ config.organization }}</span>
+      </span>
+    </a>
+
+    <nav class="nav">
+      <span class="nav-label">Operations</span>
+      <a class="nav-link {% if page == 'dashboard' %}active{% endif %}" href="/">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+        Dashboard
+      </a>
+      <a class="nav-link {% if page == 'footage' %}active{% endif %}" href="/footage">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11v8H3z"/><path d="m14 11 7-4v10l-7-4z"/></svg>
+        Footage download
+      </a>
+      <a class="nav-link {% if page == 'jobs' %}active{% endif %}" href="/jobs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></svg>
+        Jobs
+      </a>
+      <a class="nav-link {% if page == 'alerts' %}active{% endif %}" href="/alerts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        Alerts
+      </a>
+
+      <span class="nav-label">Hardware</span>
+      <a class="nav-link {% if page == 'nvrs' %}active{% endif %}" href="/nvrs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>
+        NVRs &amp; cameras
+      </a>
+      {% if is_admin %}
+      <a class="nav-link {% if page == 'agents' %}active{% endif %}" href="/agents">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="12" rx="2"/><path d="M8 20h8M12 16v4M9 9h.01M15 9h.01"/></svg>
+        Campus agents
+      </a>
+      {% endif %}
+
+      {% if is_admin %}
+      <span class="nav-label">Administration</span>
+      <a class="nav-link {% if page == 'integrations' %}active{% endif %}" href="/integrations">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg>
+        Integrations
+      </a>
+      <a class="nav-link {% if page == 'users' %}active{% endif %}" href="/users">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Users
+      </a>
+      <a class="nav-link {% if page == 'settings' %}active{% endif %}" href="/settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+        Settings
+      </a>
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="user-card">
+        <span class="avatar">{{ (user.username[:2] if user else 'CC')|upper }}</span>
+        <span class="user-meta">
+          <b>{{ user.username if user else 'Guest' }}</b>
+          <span>{{ user.role|replace('_',' ') if user else 'viewer' }}</span>
+        </span>
+        <button class="icon-btn" id="logout-btn" title="Sign out" aria-label="Sign out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn sidebar-collapse" id="sidebar-toggle" aria-label="Collapse menu" title="Collapse menu" aria-expanded="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m15 9-3 3 3 3"/></svg>
+      </button>
+      <button class="icon-btn menu-toggle" id="menu-toggle" aria-label="Open menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+      </button>
+      <div class="topbar-title">
+        <h1>{% block heading %}{{ config.app_name }}{% endblock %}</h1>
+        <p>{% block subheading %}{{ config.organization }}{% endblock %}</p>
+      </div>
+      <div class="topbar-actions">
+        {% block topbar_actions %}{% endblock %}
+        <button class="icon-btn" data-theme-toggle title="Toggle theme" aria-label="Toggle theme"></button>
+        <a class="icon-btn" href="/miniapp" target="_blank" title="Open MiniApp preview" aria-label="MiniApp">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+        </a>
+      </div>
+    </header>
+
+    <div class="content">
+      {% block content %}{% endblock %}
+      <footer class="app-footer">Vibecoded by <span>Chamroeun Soknara</span></footer>
+    </div>
+  </main>
+</div>
+
+<nav class="bottom-nav">
+  <div class="inner">
+    <a class="{% if page == 'dashboard' %}active{% endif %}" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+      Home
+    </a>
+    <a class="{% if page == 'footage' %}active{% endif %}" href="/footage">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11v8H3z"/><path d="m14 11 7-4v10l-7-4z"/></svg>
+      Footage
+    </a>
+    <a class="{% if page == 'jobs' %}active{% endif %}" href="/jobs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></svg>
+      Jobs
+    </a>
+    <a class="{% if page == 'nvrs' %}active{% endif %}" href="/nvrs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg>
+      NVRs
+    </a>
+    <a class="{% if page in ['alerts','integrations','users','settings'] %}active{% endif %}" href="{{ '/settings' if is_admin else '/alerts' }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+      More
+    </a>
+  </div>
+</nav>
+
+<div id="toasts"></div>
+<script src="/static/js/app.js?v={{ asset_version }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

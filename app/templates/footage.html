@@ -1,0 +1,488 @@
+{% extends "base.html" %}
+{% block title %}Footage download{% endblock %}
+{% block heading %}Footage download{% endblock %}
+{% block subheading %}Manually extract, compress and deliver recordings{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-ghost btn-sm" id="refresh-jobs">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+    Refresh
+  </button>
+{% endblock %}
+
+{% block content %}
+<div class="grid footage-grid">  <section class="card">
+    <div class="card-head">
+      <h2>New footage request</h2>
+      <span class="badge badge-info no-dot" id="selected-count">0 selected</span>
+    </div>
+    <form class="card-body stack" id="request-form">
+      <div class="form-grid">
+        <div class="field">
+          <label for="date">Date</label>
+          <input class="input" type="date" id="date" required>
+        </div>
+        <div class="field">
+          <label>Time range <span class="hint">(24-hour)</span></label>
+          <div class="time-range">
+            <div class="time-pick">
+              <select class="select" id="start-hour" aria-label="Start hour"></select>
+              <span class="time-sep">:</span>
+              <select class="select" id="start-minute" aria-label="Start minute"></select>
+            </div>
+            <span class="time-arrow">→</span>
+            <div class="time-pick">
+              <select class="select" id="end-hour" aria-label="End hour"></select>
+              <span class="time-sep">:</span>
+              <select class="select" id="end-minute" aria-label="End minute"></select>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="campus">Campus</label>
+          <select class="select" id="campus"></select>
+        </div>
+        <div class="field">
+          <label for="zone">Zone</label>
+          <select class="select" id="zone"></select>
+        </div>
+        <div class="field span-2">
+          <label for="folder-name">Folder / incident name</label>
+          <input class="input" id="folder-name" placeholder="e.g. Gate C incident 30-10-2026">
+          <span class="hint">This becomes the Google Drive folder name and file prefix.</span>
+        </div>
+        <div class="field">
+          <label for="incident">Incident description <span class="hint">(optional)</span></label>
+          <input class="input" id="incident" placeholder="Short description">
+        </div>
+        <div class="field">
+          <label for="requester-email">Requester email <span class="hint">(optional)</span></label>
+          <input class="input" id="requester-email" type="email" placeholder="name@footprintsschool.edu.kh">
+        </div>
+        <div class="field span-2">
+          <label for="destination">Destination</label>
+          <select class="select" id="destination"></select>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row-between">
+        <div>
+          <div class="label">Cameras</div>
+          <div class="tiny faint">Select cameras from one or more NVRs. Offline cameras can still be requested.</div>
+        </div>
+        <div class="row">
+          <button type="button" class="btn btn-ghost btn-xs" id="select-visible">Select visible</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="clear-cams">Clear</button>
+        </div>
+      </div>
+      <input class="input" id="camera-search" placeholder="Search camera name or channel…">
+      <div class="stack" id="camera-groups" style="gap:12px">
+        <div class="skeleton" style="height:120px"></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row" style="gap:16px">
+        <label class="switch"><input type="checkbox" id="upload-toggle" checked><span class="track"></span><span class="small">Upload to Google Drive</span></label>
+        <label class="switch"><input type="checkbox" id="approver-toggle"><span class="track"></span><span class="small">Email approver</span></label>
+      </div>
+
+      <div class="row-between">
+        <span class="tiny faint" id="compression-hint">Compression settings are applied automatically.</span>
+        <button class="btn" type="submit" id="submit-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></svg>
+          Start extraction
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <aside class="stack">
+    <section class="card">
+      <div class="card-head"><h2>Selection</h2><span class="badge no-dot" id="selection-badge">0</span></div>
+      <div class="card-body" id="selection-summary">
+        <div class="empty" style="padding:22px 10px"><div class="small faint">No cameras selected yet.</div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Recent jobs</h2><a class="btn-link" href="/jobs">All jobs →</a></div>
+      <div class="card-body tight stack" id="recent-jobs" style="gap:9px">
+        <div class="skeleton" style="height:70px"></div>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<!-- Job detail modal -->
+<div class="modal-backdrop" id="job-modal">
+  <div class="modal wide">
+    <div class="modal-head"><h2 id="job-modal-title">Job</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <div class="modal-body" id="job-modal-body"></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-modal-close>Close</button></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let tree = { campuses: [], nvrs: [] };
+  let folders = [];
+  let selected = new Map();
+  let currentCampus = '';
+  let currentZone = '';
+  let recentJobs = [];
+
+  const key = (nvrId, channel) => `${nvrId}:${channel}`;
+
+  function todayValue() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function timeValue(offsetMinutes) {
+    const d = new Date(Date.now() + (offsetMinutes || 0) * 60000);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+  function buildTimePickers() {
+    const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+    const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+    ['start-hour', 'end-hour'].forEach((id) => {
+      const select = document.getElementById(id);
+      if (select) select.innerHTML = hours.map((h) => `<option value="${h}">${h}</option>`).join('');
+    });
+    ['start-minute', 'end-minute'].forEach((id) => {
+      const select = document.getElementById(id);
+      if (select) select.innerHTML = minutes.map((m) => `<option value="${m}">${m}</option>`).join('');
+    });
+  }
+  function setTime(prefix, value) {
+    const [hour, minute] = String(value || '00:00').split(':');
+    const hourEl = document.getElementById(prefix + '-hour');
+    const minuteEl = document.getElementById(prefix + '-minute');
+    if (hourEl) hourEl.value = hour;
+    if (minuteEl) minuteEl.value = minute;
+  }
+  function getTime(prefix) {
+    return `${document.getElementById(prefix + '-hour').value}:${document.getElementById(prefix + '-minute').value}`;
+  }
+  function toApiDate(value) {
+    const [y, m, d] = value.split('-');
+    return `${d}-${m}-${y}`;
+  }
+
+  function fillCampus() {
+    const select = document.getElementById('campus');
+    select.innerHTML = tree.campuses.map((c) => `<option value="${c.key}">${App.escapeHtml(c.name)}</option>`).join('');
+    currentCampus = tree.campuses[0]?.key || '';
+    select.value = currentCampus;
+    fillZones();
+  }
+
+  function fillZones() {
+    const campus = tree.campuses.find((c) => c.key === currentCampus);
+    const select = document.getElementById('zone');
+    const zones = campus ? campus.zones : [];
+    select.innerHTML = `<option value="">All zones</option>` + zones.map((z) => `<option value="${z.key}">${App.escapeHtml(z.name)}</option>`).join('');
+    currentZone = '';
+    select.value = '';
+    fillDestinations();
+    renderCameras();
+  }
+
+  function fillDestinations() {
+    const select = document.getElementById('destination');
+    const matching = folders.filter((f) => !f.campus || f.campus === currentCampus);
+    select.innerHTML = matching.map((f) => `<option value="${f.key}">${App.escapeHtml(f.name)}</option>`).join('') +
+      `<option value="LOCAL">🖥 Server only (no upload)</option>`;
+    select.value = matching[0]?.key || 'LOCAL';
+  }
+
+  function groupedNvrs() {
+    return tree.nvrs.filter((n) => n.enabled && n.campus === currentCampus && (!currentZone || n.zone === currentZone));
+  }
+
+  function renderCameras() {
+    const host = document.getElementById('camera-groups');
+    const nvrs = groupedNvrs();
+    if (!nvrs.length) {
+      host.innerHTML = App.emptyState('No NVRs in this campus/zone. Add one under NVRs & cameras.', '');
+      return;
+    }
+    host.innerHTML = nvrs.map((nvr) => {
+      const cameras = (nvr.cameras || []).filter((c) => c.enabled);
+      return `<div class="picker" data-nvr="${nvr.id}">
+        <div class="picker-head">
+          <span class="name">${App.escapeHtml(nvr.name)} ${App.statusBadge(nvr.status)}</span>
+          <span class="tiny faint">${cameras.length} cams</span>
+          <button type="button" class="btn btn-ghost btn-xs" data-select-nvr="${nvr.id}">Select all</button>
+        </div>
+        <div class="camera-grid">
+          ${cameras.map((c) => `<div class="camera-item ${selected.has(key(nvr.id,c.channel)) ? 'on' : ''}" data-camera="${nvr.id}:${c.channel}" data-name="${App.escapeHtml(c.name)}" data-nvrname="${App.escapeHtml(nvr.name)}" data-nvrcode="${App.escapeHtml(nvr.code)}" data-channel="${c.channel}" data-online="${c.online}">
+            <span class="ch">${c.channel}</span><span class="nm">${App.escapeHtml(c.name)}</span>
+          </div>`).join('') || '<div class="tiny faint" style="padding:8px">No cameras discovered. Use “Discover” on the NVR page.</div>'}
+        </div>
+      </div>`;
+    }).join('');
+    wireCameras();
+    applySearch(document.getElementById('camera-search').value);
+  }
+
+  function wireCameras() {
+    document.querySelectorAll('.camera-item').forEach((el) => {
+      el.addEventListener('click', () => toggleCamera(el));
+    });
+    document.querySelectorAll('[data-select-nvr]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const nvrId = Number(btn.getAttribute('data-select-nvr'));
+        const items = Array.from(document.querySelectorAll(`.picker[data-nvr="${nvrId}"] .camera-item`));
+        const visible = items.filter((el) => el.style.display !== 'none');
+        const allOn = visible.every((el) => el.classList.contains('on'));
+        visible.forEach((el) => {
+          const isOn = el.classList.contains('on');
+          if (allOn && isOn) { el.click(); }
+          else if (!allOn && !isOn) { el.click(); }
+        });
+      });
+    });
+  }
+
+  function toggleCamera(el) {
+    const k = el.getAttribute('data-camera');
+    if (selected.has(k)) { selected.delete(k); el.classList.remove('on'); }
+    else {
+      selected.set(k, {
+        nvr_id: Number(el.getAttribute('data-camera').split(':')[0]),
+        channel: Number(el.getAttribute('data-channel')),
+        name: el.getAttribute('data-name'),
+        nvr: el.getAttribute('data-nvrname'),
+        online: el.getAttribute('data-online'),
+      });
+      el.classList.add('on');
+    }
+    updateSelection();
+  }
+
+  function updateSelection() {
+    document.getElementById('selected-count').textContent = `${selected.size} selected`;
+    document.getElementById('selection-badge').textContent = selected.size;
+    const host = document.getElementById('selection-summary');
+    if (!selected.size) {
+      host.innerHTML = '<div class="empty" style="padding:22px 10px"><div class="small faint">No cameras selected yet.</div></div>';
+      return;
+    }
+    const groups = {};
+    selected.forEach((c) => { (groups[c.nvr] = groups[c.nvr] || []).push(c); });
+    host.innerHTML = Object.entries(groups).map(([nvr, cams]) => `<div class="mb-2">
+      <div class="row-between"><span class="strong small">${App.escapeHtml(nvr)}</span><span class="chip">${cams.length}</span></div>
+      <div class="row mt-1">${cams.map((c) => `<span class="chip">${c.channel} · ${App.escapeHtml(c.name)}</span>`).join('')}</div>
+    </div>`).join('');
+  }
+
+  function applySearch(query) {
+    const q = (query || '').toLowerCase().trim();
+    document.querySelectorAll('.camera-item').forEach((el) => {
+      const text = (el.getAttribute('data-name') + ' ' + el.getAttribute('data-channel')).toLowerCase();
+      el.style.display = !q || text.includes(q) ? '' : 'none';
+    });
+  }
+
+  async function loadData() {
+    const [treeData, folderData] = await Promise.all([App.api('/api/tree'), App.api('/api/folders')]);
+    tree = treeData;
+    folders = folderData.folders;
+    fillCampus();
+    updateSelection();
+  }
+
+  function renderRecentJobs() {
+    const host = document.getElementById('recent-jobs');
+    if (!recentJobs.length) { host.innerHTML = App.emptyState('No jobs yet.', ''); return; }
+    host.innerHTML = recentJobs.slice(0, 6).map((job) => {
+      const files = job.files || [];
+      return `<div class="card" style="box-shadow:none;background:var(--surface-2);border-color:var(--border)">
+        <div style="padding:11px 12px">
+          <div class="row-between"><b class="small truncate" style="max-width:70%;min-width:0">${App.escapeHtml(job.folder_name || job.ref)}</b>${App.statusBadge(job.status)}</div>
+          <div class="tiny faint mt-1">${App.timeAgo(job.created_at)} · ${(job.result && job.result.files || []).length || 0} file(s)</div>
+          ${['running','queued','dispatched'].includes(job.status) ? `<div class="progress thin mt-2"><i style="width:${job.progress}%"></i></div><div class="tiny faint mt-1 job-title">${App.escapeHtml(job.message || '')}</div>` : ''}
+          <div class="row mt-2">
+            <button class="btn btn-ghost btn-xs" data-job="${job.id}">Details</button>
+            ${job.drive_link ? `<a class="btn btn-soft btn-xs" href="${job.drive_link}" target="_blank">Drive</a>` : ''}
+            ${files.filter(f => f.download_url).slice(0,2).map(f => `<a class="btn btn-ghost btn-xs btn-file" href="${f.download_url}" title="${App.escapeHtml(f.filename)}">⬇ <span class="truncate">${App.escapeHtml(f.filename)}</span></a>`).join('')}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+    host.querySelectorAll('[data-job]').forEach((btn) => btn.addEventListener('click', () => openJob(Number(btn.getAttribute('data-job')))));
+  }
+
+  async function loadJobs() {
+    const data = await App.api('/api/jobs?limit=20');
+    recentJobs = data.jobs;
+    renderRecentJobs();
+  }
+
+  let jobModalTimer = null;
+  let jobModalId = null;
+  let jobModalBusy = false;
+  let jobModalSignature = '';
+
+  function stopJobModal() {
+    if (jobModalTimer) clearTimeout(jobModalTimer);
+    jobModalTimer = null;
+    jobModalId = null;
+    jobModalSignature = '';
+  }
+
+  function jobPayloadSignature(job) {
+    const files = App.jobFiles(job);
+    const errors = job.result?.errors || [];
+    return JSON.stringify({
+      status: job.status,
+      progress: job.progress,
+      message: job.message,
+      error: job.error,
+      drive_link: job.drive_link,
+      files: files.map((f) => [f.id, f.filename, f.size_bytes, f.status, f.download_url]),
+      errors,
+    });
+  }
+
+  function renderJobModal(job) {
+    const body = document.getElementById('job-modal-body');
+    const files = App.jobFiles(job);
+    const errors = job.result?.errors || [];
+    const scroll = body.scrollTop;
+    document.getElementById('job-modal-title').textContent = job.folder_name || job.ref;
+    body.innerHTML = `
+      <div class="row-between mb-2">${App.statusBadge(job.status)}<span class="tiny faint">${job.ref}</span></div>
+      ${['running','queued','dispatched'].includes(job.status) ? App.progressHtml(job.progress, job.message || 'Working') : ''}
+      ${job.error ? `<div class="alert-row critical mt-2"><span class="dot"></span><div class="msg">${App.escapeHtml(job.error)}</div></div>` : ''}
+      <div class="grid grid-2 mt-3">
+        <div class="metric"><div class="l">Created</div><div class="v" style="font-size:.8rem">${App.fmtDate(job.created_at)}</div></div>
+        <div class="metric"><div class="l">Files</div><div class="v">${files.length}</div></div>
+      </div>
+      ${job.drive_link ? `<a class="btn btn-soft btn-block mt-3" href="${job.drive_link}" target="_blank">🔗 Open Google Drive folder</a>` : ''}
+      <h3 class="mt-3 mb-2">Files</h3>
+      <div class="stack" style="gap:8px">${files.map((f) => `<div class="row-between" style="padding:9px 11px;background:var(--surface-2);border-radius:10px">
+        <div><div class="small strong">${App.escapeHtml(f.filename)}</div><div class="tiny faint">${App.fmtBytes(f.size_bytes)} · ${App.escapeHtml(f.status || 'ready')}${f.camera ? ' · ' + App.escapeHtml(f.camera) + (f.channel ? ' CH' + f.channel : '') : ''}</div></div>
+        ${f.download_url ? `<a class="btn btn-sm btn-ghost" href="${f.download_url}">⬇ Download</a>` : (f.on_agent ? '<span class="tiny faint">on agent</span>' : '<span class="tiny faint">expired</span>')}
+      </div>`).join('') || `<div class="tiny faint">${['running','queued','dispatched'].includes(job.status) ? 'Files are being prepared…' : 'No files were produced.'}</div>`}</div>
+      ${errors.length ? `<h3 class="mt-3 mb-2">Warnings</h3><div class="stack" style="gap:6px">${errors.map(e => `<div class="tiny" style="color:var(--warning)">${App.escapeHtml(e)}</div>`).join('')}</div>` : ''}
+      ${['running','queued','dispatched'].includes(job.status) ? `<button class="btn btn-danger btn-block mt-3" data-modal-cancel="${job.id}">Cancel this job</button>` : ''}
+    `;
+    const cancel = body.querySelector('[data-modal-cancel]');
+    if (cancel) cancel.addEventListener('click', () => cancelJob(Number(cancel.getAttribute('data-modal-cancel'))));
+    body.scrollTop = scroll;
+  }
+
+  async function cancelJob(id) {
+    if (!await App.confirm('Cancel this job? Partial files will be kept.', { danger: true, confirm: 'Cancel job' })) return;
+    try {
+      const result = await App.api(`/api/jobs/${id}/cancel`, { method: 'POST' });
+      App.toast('Job cancelled', 'success');
+      jobModalSignature = '';
+      renderJobModal(result.job);
+      loadJobs().catch(() => {});
+      stopJobModal();
+    } catch (err) { App.toast(err.message, 'error'); }
+  }
+
+  async function refreshJobModal(id, initial) {
+    if (jobModalBusy || jobModalId !== id) return;
+    const wrap = document.getElementById('job-modal');
+    if (!wrap.classList.contains('open')) { stopJobModal(); return; }
+    jobModalBusy = true;
+    try {
+      const data = await App.api(`/api/jobs/${id}`);
+      if (jobModalId !== id) return;
+      const job = data.job;
+      const signature = jobPayloadSignature(job);
+      if (initial || signature !== jobModalSignature) {
+        jobModalSignature = signature;
+        renderJobModal(job);
+        // Keep the right-hand "Recent jobs" card in step with the modal
+        // instead of waiting for its slower background refresh.
+        loadJobs().catch(() => {});
+      }
+      if (['running','queued','dispatched'].includes(job.status)) {
+        if (jobModalTimer) clearTimeout(jobModalTimer);
+        jobModalTimer = setTimeout(() => refreshJobModal(id, false), 2500);
+      } else {
+        stopJobModal();
+        loadJobs().catch(() => {});
+      }
+    } catch (err) {
+      document.getElementById('job-modal-body').innerHTML = `<div class="alert-row critical"><span class="dot"></span><div class="msg">${App.escapeHtml(err.message || 'Could not load this job.')}</div></div>`;
+      App.toast(err.message, 'error');
+      stopJobModal();
+    } finally {
+      jobModalBusy = false;
+    }
+  }
+
+  function openJob(id) {
+    stopJobModal();
+    jobModalId = id;
+    const body = document.getElementById('job-modal-body');
+    document.getElementById('job-modal-title').textContent = 'Job details';
+    body.innerHTML = '<div class="skeleton" style="height:140px"></div>';
+    App.modal('job-modal').open();
+    refreshJobModal(id, true);
+  }
+
+  document.getElementById('campus').addEventListener('change', (e) => { currentCampus = e.target.value; fillZones(); });
+  document.getElementById('zone').addEventListener('change', (e) => { currentZone = e.target.value; fillDestinations(); renderCameras(); });
+  document.getElementById('camera-search').addEventListener('input', (e) => applySearch(e.target.value));
+  document.getElementById('clear-cams').addEventListener('click', () => { selected.clear(); renderCameras(); updateSelection(); });
+  document.getElementById('select-visible').addEventListener('click', () => {
+    document.querySelectorAll('.camera-item').forEach((el) => { if (el.style.display !== 'none' && !el.classList.contains('on')) el.click(); });
+  });
+  document.getElementById('refresh-jobs').addEventListener('click', loadJobs);
+
+  document.getElementById('request-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!selected.size) { App.toast('Select at least one camera', 'error'); return; }
+    const btn = document.getElementById('submit-btn');
+    const dateVal = document.getElementById('date').value;
+    const start = getTime('start');
+    const end = getTime('end');
+    if (!dateVal || !start || !end) { App.toast('Set the date and time range', 'error'); return; }
+    if (end <= start) { App.toast('End time must be after start time', 'error'); return; }
+    const incident = document.getElementById('incident').value.trim();
+    const folderName = document.getElementById('folder-name').value.trim() || `${incident || 'CCTV_Request'} ${toApiDate(dateVal)}`;
+    const destination = document.getElementById('destination').value;
+    const upload = document.getElementById('upload-toggle').checked && destination !== 'LOCAL';
+    const email = document.getElementById('requester-email').value.trim();
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Starting…';
+    try {
+      const result = await App.api('/api/jobs', {
+        method: 'POST',
+        body: {
+          cameras: Array.from(selected.values()).map((c) => ({ nvr_id: c.nvr_id, channel: c.channel })),
+          date: toApiDate(dateVal), start_time: start, end_time: end,
+          folder_name: folderName, incident: incident || folderName,
+          campus: currentCampus, drive_folder_key: upload ? destination : null,
+          upload, notify_emails: email ? [email] : [], notify_approver: document.getElementById('approver-toggle').checked,
+          requester_email: email || null,
+        },
+      });
+      App.toast('Job started · ' + result.job.ref, 'success');
+      selected.clear(); renderCameras(); updateSelection();
+      await loadJobs();
+      openJob(result.job.id);
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = 'Start extraction'; }
+  });
+
+  (function init() {
+    document.getElementById('date').value = todayValue();
+    buildTimePickers();
+    setTime('start', timeValue(-60));
+    setTime('end', timeValue(0));
+    document.getElementById('folder-name').placeholder = `CCTV_Request ${toApiDate(todayValue())}`;
+    loadData().then(loadJobs).catch((err) => App.toast(err.message, 'error'));
+    App.autoRefresh(loadJobs, 12000);
+  })();
+</script>
+{% endblock %}

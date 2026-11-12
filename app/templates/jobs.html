@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}Jobs{% endblock %}
+{% block heading %}Jobs{% endblock %}
+{% block subheading %}Track downloads, compression and Drive delivery{% endblock %}
+{% block topbar_actions %}
+  <a class="btn btn-sm" href="/footage">New request</a>
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <h2>All jobs</h2>
+    <div class="row">
+      <select class="select" id="status-filter" style="width:150px">
+        <option value="">All statuses</option>
+        <option value="queued">Queued</option>
+        <option value="dispatched">Waiting for agent</option>
+        <option value="running">Running</option>
+        <option value="completed">Completed</option>
+        <option value="partial">Partial</option>
+        <option value="failed">Failed</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+    </div>
+  </div>
+  <div class="table-wrap" id="jobs-table">
+    <div class="card-body"><div class="skeleton" style="height:180px"></div></div>
+  </div>
+</section>
+
+<div class="modal-backdrop" id="job-modal">
+  <div class="modal wide">
+    <div class="modal-head"><h2 id="job-modal-title">Job</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <div class="modal-body" id="job-modal-body"></div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-modal-close>Close</button></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentJob = null;
+
+  function row(job) {
+    return `<tr>
+      <td><b class="job-title">${App.escapeHtml(job.folder_name || job.ref)}</b><div class="tiny faint">${job.ref} · ${App.escapeHtml(job.source)}</div></td>
+      <td class="hide-mobile">${App.escapeHtml(job.username || '—')}</td>
+      <td>${App.statusBadge(job.status)}${['running','queued','dispatched'].includes(job.status) ? `<div class="progress thin mt-1" style="min-width:90px"><i style="width:${job.progress}%"></i></div>` : ''}${job.agent ? `<div class="tiny faint">${App.escapeHtml(job.agent)}</div>` : ''}</td>
+      <td class="hide-mobile">${(job.files || []).length}</td>
+      <td class="hide-mobile tiny faint">${App.timeAgo(job.created_at)}</td>
+      <td><div class="actions">
+        <button class="btn btn-ghost btn-xs" data-open="${job.id}">View</button>
+        ${job.drive_link ? `<a class="btn btn-soft btn-xs" href="${job.drive_link}" target="_blank">Drive</a>` : ''}
+        ${['running','queued','dispatched'].includes(job.status) ? `<button class="btn btn-danger btn-xs" data-cancel="${job.id}">Cancel</button>` : ''}
+        {% if is_admin %}${!['running','queued','dispatched'].includes(job.status) ? `<button class="btn btn-ghost btn-xs" data-delete="${job.id}">Delete</button>` : ''}{% endif %}
+      </div></td>
+    </tr>`;
+  }
+
+  async function load() {
+    const status = document.getElementById('status-filter').value;
+    const data = await App.api('/api/jobs?limit=100' + (status ? '&status=' + encodeURIComponent(status) : ''));
+    const host = document.getElementById('jobs-table');
+    if (!data.jobs.length) {
+      host.innerHTML = App.emptyState('No jobs match this filter.', '');
+      return;
+    }
+    host.innerHTML = `<table><thead><tr><th>Job</th><th class="hide-mobile">User</th><th>Status</th><th class="hide-mobile">Files</th><th class="hide-mobile">Created</th><th></th></tr></thead><tbody>${data.jobs.map(row).join('')}</tbody></table>`;
+    host.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openJob(Number(b.getAttribute('data-open')))));
+    host.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', () => cancelJob(Number(b.getAttribute('data-cancel')))));
+    host.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', () => deleteJob(Number(b.getAttribute('data-delete')))));
+  }
+
+  let jobModalTimer = null;
+  let jobModalId = null;
+  let jobModalBusy = false;
+  let jobModalSignature = '';
+
+  function stopJobModal() {
+    if (jobModalTimer) clearTimeout(jobModalTimer);
+    jobModalTimer = null;
+    jobModalId = null;
+    jobModalSignature = '';
+  }
+
+  function jobPayloadSignature(job) {
+    const files = App.jobFiles(job);
+    const errors = job.result?.errors || [];
+    return JSON.stringify({
+      status: job.status,
+      progress: job.progress,
+      message: job.message,
+      error: job.error,
+      drive_link: job.drive_link,
+      retry_pending: job.retry_pending,
+      files: files.map((f) => [f.id, f.filename, f.size_bytes, f.status, f.download_url, f.agent_download]),
+      cameras: (job.result?.cameras || []).map((c) => [c.nvr_id, c.channel, c.status, c.message, c.filename, c.size_bytes]),
+      errors,
+    });
+  }
+
+  function splitCameraRows(job, files) {
+    const rows = (job.result && job.result.cameras) || [];
+    if (!rows.length) return { rows: [], others: files };
+    const byFile = new Map(files.filter((f) => f.filename).map((f) => [f.filename, f]));
+    const used = new Set();
+    const enriched = rows.map((row) => {
+      const file = row.filename ? byFile.get(row.filename) : null;
+      if (file) used.add(file.filename);
+      return Object.assign({}, row, { file });
+    });
+    return { rows: enriched, others: files.filter((f) => !used.has(f.filename)) };
+  }
+
+  function downloadButtons(file) {
+    if (!file || !file.download_url) return '';
+    return `<div class="row" style="gap:4px;flex-wrap:nowrap">
+      <button type="button" class="btn btn-sm btn-ghost" data-download-url="${App.escapeHtml(file.download_url)}" data-filename="${App.escapeHtml(file.filename)}" data-agent="${file.agent_download ? 'true' : 'false'}">⬇ Download</button>
+      <button type="button" class="btn btn-ghost btn-xs" data-download-url="${App.escapeHtml(file.download_url)}" data-filename="${App.escapeHtml(file.filename)}" data-agent="${file.agent_download ? 'true' : 'false'}" title="Retry / resume download">↻</button>
+      <button type="button" class="btn btn-ghost btn-xs" data-copy-url="${App.escapeHtml(file.download_url)}" title="Copy direct link">⧉</button>
+    </div>`;
+  }
+
+  function cameraRowHtml(row, job) {
+    const running = ['running', 'queued', 'dispatched'].includes(job.status);
+    const failed = row.status === 'failed';
+    const name = App.escapeHtml(row.camera || `Channel ${row.channel}`);
+    const meta = [row.nvr, row.channel ? `CH${row.channel}` : null]
+      .filter(Boolean).map(App.escapeHtml).join(' · ');
+    const detail = failed
+      ? (row.message || 'Download failed')
+      : (row.filename ? `${row.filename} · ${App.fmtBytes(row.size_bytes)}` : (row.message || 'Ready'));
+    return `<div class="camera-row ${failed ? 'failed' : 'success'}">
+      <span class="camera-dot" aria-hidden="true"></span>
+      <div class="camera-info">
+        <div class="small strong truncate">${name}${meta ? ` <span class="faint">· ${meta}</span>` : ''}</div>
+        <div class="tiny faint ${failed ? 'camera-error' : ''}">${App.escapeHtml(detail)}</div>
+      </div>
+      <div class="camera-actions">
+        ${downloadButtons(row.file)}
+        ${failed && !running ? `<button type="button" class="btn btn-soft btn-xs" data-retry-camera="${row.nvr_id}:${row.channel}" title="Retry only this camera">↻ Retry</button>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function renderJobModal(job) {
+    const body = document.getElementById('job-modal-body');
+    const files = App.jobFiles(job);
+    const errors = job.result?.errors || [];
+    const scroll = body.scrollTop;
+    currentJob = job;
+    const { rows: cameraRows, others } = splitCameraRows(job, files);
+    const failedCount = cameraRows.filter((row) => row.status === 'failed').length;
+    const runningLike = ['running', 'queued', 'dispatched'].includes(job.status);
+    const legacyRetry = !cameraRows.length && ['failed', 'partial'].includes(job.status);
+    document.getElementById('job-modal-title').textContent = job.folder_name || job.ref;
+    body.innerHTML = `
+      <div class="row-between mb-2">${App.statusBadge(job.status)}<span class="tiny faint">${job.ref} · ${App.fmtDate(job.created_at)}</span></div>
+      ${runningLike ? App.progressHtml(job.progress, job.message || 'Working') : ''}
+      ${job.error ? `<div class="alert-row critical mt-2"><span class="dot"></span><div class="msg">${App.escapeHtml(job.error)}</div></div>` : ''}
+      <div class="grid grid-2 mt-3">
+        <div class="metric"><div class="l">Source</div><div class="v" style="font-size:.82rem">${App.escapeHtml(job.source)}</div></div>
+        <div class="metric"><div class="l">Destination</div><div class="v" style="font-size:.82rem">${App.escapeHtml(job.drive_folder_key || 'Server only')}</div></div>
+        <div class="metric"><div class="l">Files</div><div class="v">${files.length}</div></div>
+        <div class="metric"><div class="l">Finished</div><div class="v" style="font-size:.76rem">${job.finished_at ? App.fmtDate(job.finished_at) : '—'}</div></div>
+      </div>
+      ${job.drive_link ? `<a class="btn btn-soft btn-block mt-3" href="${job.drive_link}" target="_blank">🔗 Open Google Drive folder</a>` : ''}
+      ${cameraRows.length ? `<h3 class="mt-3 mb-2">Cameras</h3>
+      <p class="tiny faint mb-2">Each camera is listed separately. Retry a failed camera without downloading the cameras that already succeeded.</p>
+      ${failedCount > 1 && !runningLike ? `<button type="button" class="btn btn-ghost btn-sm mb-2" data-retry-all>↻ Retry all ${failedCount} failed cameras</button>` : ''}
+      <div class="camera-list">${cameraRows.map((row) => cameraRowHtml(row, job)).join('')}</div>` : ''}
+      ${others.length ? `<h3 class="mt-3 mb-2">${cameraRows.length ? 'Other files' : 'Files'}</h3>
+      ${others.some((f) => f.agent_download) ? '<p class="tiny faint mb-2">Agent files download directly from the campus. Large files support resume; if a download stops, click ↻ Retry.</p>' : ''}
+      <div class="stack" style="gap:8px">${others.map((f) => `<div class="row-between" style="padding:9px 11px;background:var(--surface-2);border-radius:10px">
+        <div class="file-info"><div class="small strong truncate" title="${App.escapeHtml(f.filename)}">${App.escapeHtml(f.filename)}</div><div class="tiny faint">${App.fmtBytes(f.size_bytes)} · ${App.escapeHtml(f.status || 'ready')}${f.camera ? ' · ' + App.escapeHtml(f.camera) + (f.channel ? ' CH' + f.channel : '') : ''}${f.agent_download ? ' · direct from agent' : ''}</div></div>
+        ${downloadButtons(f) || (f.on_agent ? '<span class="tiny faint">on agent</span>' : '<span class="tiny faint">expired</span>')}
+      </div>`).join('')}</div>` : (!cameraRows.length ? `<div class="tiny faint mt-3">${runningLike ? 'Files are being prepared…' : 'No files were produced.'}</div>` : '')}
+      ${errors.length ? `<h3 class="mt-3 mb-2">Warnings</h3><div class="stack" style="gap:6px">${errors.map(e => `<div class="tiny" style="color:var(--warning)">${App.escapeHtml(e)}</div>`).join('')}</div>` : ''}
+      ${legacyRetry ? `<button type="button" class="btn btn-soft btn-block mt-3" data-retry-all>↻ Retry failed downloads</button>` : ''}
+      ${runningLike ? `<button class="btn btn-danger btn-block mt-3" data-modal-cancel="${job.id}">Cancel this job</button>` : ''}
+    `;
+    const cancel = document.querySelector('[data-modal-cancel]');
+    if (cancel) cancel.addEventListener('click', () => cancelJob(Number(cancel.getAttribute('data-modal-cancel'))));
+    body.querySelectorAll('[data-retry-camera]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const [nvrId, channel] = btn.getAttribute('data-retry-camera').split(':').map(Number);
+        retryCameras([{ nvr_id: nvrId, channel }]);
+      });
+    });
+    body.querySelectorAll('[data-retry-all]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const cameras = cameraRows
+          .filter((row) => row.status === 'failed')
+          .map((row) => ({ nvr_id: row.nvr_id, channel: row.channel }));
+        retryCameras(cameras);
+      });
+    });
+    body.querySelectorAll('[data-download-url]').forEach((btn) => {
+      btn.addEventListener('click', () => App.downloadFile(
+        btn.getAttribute('data-download-url'),
+        btn.getAttribute('data-filename'),
+        { agent: btn.getAttribute('data-agent') === 'true' },
+      ));
+    });
+    body.querySelectorAll('[data-copy-url]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try { await App.copyText(btn.getAttribute('data-copy-url')); App.toast('Direct link copied', 'success'); }
+        catch (err) { App.toast(err.message, 'error'); }
+      });
+    });
+    body.scrollTop = scroll;
+  }
+
+  async function refreshJobModal(id, initial) {
+    if (jobModalBusy || jobModalId !== id) return;
+    const wrap = document.getElementById('job-modal');
+    if (!wrap.classList.contains('open')) { stopJobModal(); return; }
+    jobModalBusy = true;
+    try {
+      const data = await App.api(`/api/jobs/${id}`);
+      if (jobModalId !== id) return;
+      const job = data.job;
+      const signature = jobPayloadSignature(job);
+      if (initial || signature !== jobModalSignature) {
+        jobModalSignature = signature;
+        renderJobModal(job);
+      }
+      if (['running','queued','dispatched'].includes(job.status)) {
+        if (jobModalTimer) clearTimeout(jobModalTimer);
+        jobModalTimer = setTimeout(() => refreshJobModal(id, false), 2500);
+      } else {
+        stopJobModal();
+        load().catch(() => {});
+      }
+    } catch (err) {
+      document.getElementById('job-modal-body').innerHTML = `<div class="alert-row critical"><span class="dot"></span><div class="msg">${App.escapeHtml(err.message || 'Could not load this job.')}</div></div>`;
+      App.toast(err.message, 'error');
+      stopJobModal();
+    } finally {
+      jobModalBusy = false;
+    }
+  }
+
+  function openJob(id) {
+    stopJobModal();
+    jobModalId = id;
+    const body = document.getElementById('job-modal-body');
+    document.getElementById('job-modal-title').textContent = 'Job details';
+    body.innerHTML = '<div class="skeleton" style="height:140px"></div>';
+    App.modal('job-modal').open();
+    refreshJobModal(id, true);
+  }
+
+  async function cancelJob(id) {
+    if (!await App.confirm('Cancel this job? Partial files will be kept.', { danger: true, confirm: 'Cancel job' })) return;
+    try { await App.api(`/api/jobs/${id}/cancel`, { method: 'POST' }); App.toast('Job cancelled', 'success'); App.modal('job-modal').close(); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+  }
+  async function deleteJob(id) {
+    if (!await App.confirm('Delete this job and its local files? The Drive folder will not be deleted.', { danger: true, confirm: 'Delete' })) return;
+    try { await App.api(`/api/jobs/${id}`, { method: 'DELETE' }); App.toast('Job deleted', 'success'); App.modal('job-modal').close(); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+  }
+
+  async function retryCameras(cameras) {
+    if (!currentJob) return;
+    const id = currentJob.id;
+    try {
+      await App.api(`/api/jobs/${id}/retry`, { method: 'POST', body: { cameras } });
+      App.toast(cameras.length ? `Retrying ${cameras.length} camera(s)…` : 'Retrying failed downloads…', 'success');
+      jobModalSignature = '';
+      await refreshJobModal(id, true);
+      load().catch(() => {});
+    } catch (err) {
+      App.toast(err.message, 'error');
+    }
+  }
+
+  document.getElementById('refresh').addEventListener('click', load);
+  document.getElementById('status-filter').addEventListener('change', load);
+  App.autoRefresh(load, 8000);
+  const initial = new URLSearchParams(location.search).get('job');
+  if (initial) load().then(() => openJob(Number(initial))).catch((err) => App.toast(err.message, 'error'));
+</script>
+{% endblock %}
