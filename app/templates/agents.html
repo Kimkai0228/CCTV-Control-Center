@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}Campus agents{% endblock %}
+{% block heading %}Campus agents{% endblock %}
+{% block subheading %}Remote workers that download, compress and upload on their own campus{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-sm" id="add-agent">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    Add agent
+  </button>
+{% endblock %}
+
+{% block content %}
+<div class="alert-row info mb-3" style="max-width:1000px">
+  <span class="dot"></span>
+  <div class="msg">
+    Jobs for a remote campus are routed to that campus agent by its trigger word
+    (for example <code class="kbd">/ttp</code>). The agent downloads on the local network, compresses,
+    uploads to Drive and reports progress back here — footage never crosses campuses.
+  </div>
+</div>
+
+<div class="grid grid-4 mb-3" id="agent-stats">
+  <div class="skeleton" style="height:96px"></div>
+  <div class="skeleton" style="height:96px"></div>
+  <div class="skeleton" style="height:96px"></div>
+  <div class="skeleton" style="height:96px"></div>
+</div>
+
+<div class="health-grid" id="agent-grid">
+  <div class="skeleton" style="height:190px"></div>
+  <div class="skeleton" style="height:190px"></div>
+</div>
+
+<section class="card mt-3">
+  <div class="card-head">
+    <div><h2>Agent jobs</h2><span class="sub">Recently dispatched or executed by a campus worker</span></div>
+    <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+  </div>
+  <div class="table-wrap" id="agent-jobs"><div class="card-body"><div class="skeleton" style="height:120px"></div></div></div>
+</section>
+
+<section class="card mt-3">
+  <div class="card-head"><h2>Deploy a new agent</h2><span class="sub">Run the same image with agent mode enabled</span></div>
+  <div class="card-body stack">
+    <p class="small muted">On the remote campus host, create a compose service from the same image with these environment variables. The agent only needs outbound HTTPS to this host and local access to its NVRs.</p>
+    <pre class="kbd" id="agent-snippet" style="white-space:pre-wrap;padding:14px;border-radius:12px;overflow:auto">RUN_AGENT=true
+AGENT_MAIN_URL=https://cctv.footprints.work
+AGENT_TOKEN=<generate an agent below>
+AGENT_NAME=TTP campus agent
+AGENT_CAMPUS=ttp
+AGENT_ZONES=ecp,secondary
+AGENT_WORKERS=2
+RUN_BOT=false
+RUN_SCHEDULER=false
+AGENT_KEEP_FILES_DAYS=7</pre>
+    <p class="tiny faint">Mount <code class="kbd">./agent-data:/app/data</code> and <code class="kbd">./lib:/app/lib</code> (Hikvision SDK). For direct downloads, point nginx at port 5555 and expose only <code class="kbd">/agent-files/</code>, then set the public HTTPS URL above. A ready-made <code class="kbd">docker-compose.agent.yml</code> and <code class="kbd">.env.agent.example</code> are included in the project.</p>
+    <p class="tiny faint">The agent token is shown only once when an agent is created or rotated. Rotate it here if a container is lost.</p>
+  </div>
+</section>
+
+<!-- Agent form modal -->
+<div class="modal-backdrop" id="agent-modal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="agent-modal-title">Add campus agent</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <form id="agent-form">
+      <div class="modal-body stack">
+        <div class="form-grid">
+          <div class="field"><label>Name</label><input class="input" name="name" required placeholder="TTP campus agent"></div>
+          <div class="field"><label>Campus</label><input class="input" name="campus" required placeholder="ttp"></div>
+          <div class="field span-2"><label>Zones <span class="hint">(comma separated, blank = all zones on this campus)</span></label><input class="input" name="zones" placeholder="ecp, secondary"></div>
+          <div class="field"><label>Trigger word</label><input class="input" name="trigger_word" required placeholder="ttp" autocomplete="off"><span class="tiny faint">Telegram command <code class="kbd">/ttp</code> routes here.</span></div>
+          <div class="field span-2"><label>Public download URL <span class="hint">(optional)</span></label><input class="input mono" name="public_url" placeholder="https://agent-cctv.footprints.work"><span class="tiny faint">HTTPS address that serves this agent's <code class="kbd">/agent-files</code> route. Leave blank to copy files back to the main host.</span></div>
+          <div class="field span-2"><label>Notes</label><input class="input" name="notes" placeholder="Optional"></div>
+        </div>
+        <label class="switch"><input type="checkbox" name="enabled" checked><span class="track"></span><span class="small">Enabled</span></label>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-modal-close>Cancel</button><button class="btn" type="submit" id="agent-submit">Create agent</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Token modal -->
+<div class="modal-backdrop" id="token-modal">
+  <div class="modal">
+    <div class="modal-head"><h2>Agent token</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <div class="modal-body stack">
+      <p class="small muted">Copy this token into the agent container's <code class="kbd">AGENT_TOKEN</code>. It is not shown again.</p>
+      <div class="copy-field"><code id="agent-token" class="mono">—</code><button class="icon-btn" id="copy-agent-token" title="Copy">⧉</button></div>
+      <p class="tiny faint">The token authenticates heartbeat, job polling and progress updates over HTTPS.</p>
+    </div>
+    <div class="modal-foot"><button class="btn" data-modal-close>Done</button></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let agents = [];
+  let stats = {};
+  let jobs = [];
+  let editingId = null;
+
+  function statusBadge(status) {
+    if (status === 'online') return '<span class="badge badge-success">Online</span>';
+    if (status === 'busy') return '<span class="badge badge-warning">Busy</span>';
+    if (status === 'offline') return '<span class="badge badge-danger">Offline</span>';
+    return '<span class="badge">Unknown</span>';
+  }
+
+  function renderStats() {
+    const items = [
+      ['Agents', stats.total || 0, '🧰'],
+      ['Online', stats.online || 0, '🟢'],
+      ['Busy', stats.busy || 0, '⚙️'],
+      ['Offline', stats.offline || 0, '⚪'],
+    ];
+    document.getElementById('agent-stats').innerHTML = items.map(([label, value, icon]) => `
+      <div class="stat">
+        <div class="stat-icon">${icon}</div>
+        <div class="stat-label">${label}</div>
+        <div class="stat-value">${value}</div>
+      </div>`).join('');
+  }
+
+  function renderAgents() {
+    const host = document.getElementById('agent-grid');
+    if (!agents.length) {
+      host.innerHTML = App.emptyState('No campus agents yet. Add one to route remote-campus downloads.', '🧰');
+      return;
+    }
+    host.innerHTML = agents.map((a) => `
+      <article class="nvr-card">
+        <div class="card-head" style="padding:0 0 10px">
+          <div class="row" style="gap:10px;align-items:center">
+            <span class="avatar" style="width:34px;height:34px;font-size:.72rem">${App.escapeHtml((a.campus || '?').slice(0, 2).toUpperCase())}</span>
+            <div><h3>${App.escapeHtml(a.name)}</h3><span class="tiny faint">${App.escapeHtml((a.campus || '').toUpperCase())}${a.zones && a.zones.length ? ' · ' + a.zones.map((z) => App.escapeHtml(z)).join(', ') : ' · all zones'}</span></div>
+          </div>
+          ${statusBadge(a.status)}
+        </div>
+        <div class="stack" style="gap:6px">
+          <div class="row-between tiny"><span class="faint">Trigger</span><span class="chip mono">/${App.escapeHtml(a.trigger_word)}</span></div>
+          <div class="row-between tiny"><span class="faint">Last heartbeat</span><span>${a.last_heartbeat ? App.timeAgo(a.last_heartbeat) : 'never'}</span></div>
+          <div class="row-between tiny"><span class="faint">Host</span><span class="mono">${App.escapeHtml(a.hostname || '—')}</span></div>
+          <div class="row-between tiny"><span class="faint">Version</span><span>${App.escapeHtml(a.version || '—')}</span></div>
+          <div class="row-between tiny"><span class="faint">Direct download</span>${a.public_url ? `<span class="badge badge-success" title="${App.escapeHtml(a.public_url)}">Ready</span>` : '<span class="badge">Copy to main</span>'}</div>
+          ${a.public_url ? `<div class="tiny mono faint truncate" title="${App.escapeHtml(a.public_url)}">${App.escapeHtml(a.public_url)}</div>` : ''}
+        </div>
+        <div class="actions mt-2">
+          <button class="btn btn-ghost btn-xs" data-edit="${a.id}">Edit</button>
+          <button class="btn btn-ghost btn-xs" data-rotate="${a.id}">Rotate token</button>
+          <button class="btn btn-ghost btn-xs" style="color:var(--danger)" data-del="${a.id}">Delete</button>
+        </div>
+      </article>`).join('');
+    host.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => openForm(Number(b.getAttribute('data-edit')))));
+    host.querySelectorAll('[data-rotate]').forEach((b) => b.addEventListener('click', () => rotateToken(Number(b.getAttribute('data-rotate')))));
+    host.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => removeAgent(Number(b.getAttribute('data-del')))));
+  }
+
+  function renderJobs() {
+    const host = document.getElementById('agent-jobs');
+    if (!jobs.length) { host.innerHTML = App.emptyState('No jobs have run on an agent yet.', ''); return; }
+    host.innerHTML = `<table><thead><tr><th>Job</th><th>Agent</th><th>Campus</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>${jobs.map((j) => `
+      <tr>
+        <td><b>${App.escapeHtml(j.folder_name)}</b><div class="tiny faint mono">${App.escapeHtml(j.ref)}</div></td>
+        <td class="small">${App.escapeHtml(j.agent || '—')}</td>
+        <td class="tiny">${App.escapeHtml((j.agent_campus || '').toUpperCase() || '—')}</td>
+        <td><span class="badge ${j.status === 'completed' ? 'badge-success' : j.status === 'failed' ? 'badge-danger' : j.status === 'running' ? 'badge-warning' : ''}">${App.escapeHtml(j.status)}</span></td>
+        <td class="tiny faint">${j.created_at ? App.timeAgo(j.created_at) : '—'}</td>
+        <td>${j.drive_link ? `<a class="btn btn-ghost btn-xs" href="${j.drive_link}" target="_blank">Drive</a>` : ''}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+
+  async function load() {
+    const data = await App.api('/api/agents');
+    agents = data.agents; stats = data.stats; jobs = data.jobs || [];
+    renderStats(); renderAgents(); renderJobs();
+  }
+
+  function openForm(id) {
+    editingId = id || null;
+    const form = document.getElementById('agent-form');
+    form.reset();
+    document.getElementById('agent-modal-title').textContent = id ? 'Edit campus agent' : 'Add campus agent';
+    document.getElementById('agent-submit').textContent = id ? 'Save changes' : 'Create agent';
+    if (id) {
+      const a = agents.find((x) => x.id === id);
+      if (!a) return;
+      form.name.value = a.name;
+      form.campus.value = a.campus;
+      form.zones.value = (a.zones || []).join(', ');
+      form.trigger_word.value = a.trigger_word;
+      form.public_url.value = a.public_url || '';
+      form.notes.value = a.notes || '';
+      form.querySelector('[name=enabled]').checked = !!a.enabled;
+    }
+    App.modal('agent-modal').open();
+  }
+
+  function showToken(token) {
+    document.getElementById('agent-token').textContent = token;
+    document.getElementById('copy-agent-token').setAttribute('data-copy', token);
+    App.modal('token-modal').open();
+  }
+
+  async function removeAgent(id) {
+    if (!await App.confirm('Delete this agent? Its container will stop receiving jobs.', { danger: true, confirm: 'Delete agent' })) return;
+    try { await App.api(`/api/agents/${id}`, { method: 'DELETE' }); App.toast('Agent deleted', 'success'); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+  }
+
+  async function rotateToken(id) {
+    if (!await App.confirm('Rotate the token? The old token stops working immediately.', { confirm: 'Rotate token' })) return;
+    try { const r = await App.api(`/api/agents/${id}/rotate-token`, { method: 'POST' }); showToken(r.token); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+  }
+
+  document.getElementById('add-agent').addEventListener('click', () => openForm(null));
+  document.getElementById('refresh').addEventListener('click', () => load().catch((err) => App.toast(err.message, 'error')));
+  document.getElementById('copy-agent-token').addEventListener('click', async (e) => {
+    try { await App.copyText(e.currentTarget.getAttribute('data-copy') || ''); App.toast('Token copied', 'success'); }
+    catch (err) { App.toast(err.message, 'error'); }
+  });
+
+  document.getElementById('agent-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const body = {
+      name: form.name.value.trim(),
+      campus: form.campus.value.trim().toLowerCase(),
+      zones: form.zones.value.split(',').map((z) => z.trim()).filter(Boolean),
+      trigger_word: form.trigger_word.value.trim().toLowerCase(),
+      public_url: form.public_url.value.trim() || null,
+      notes: form.notes.value.trim() || null,
+      enabled: form.querySelector('[name=enabled]').checked,
+    };
+    const btn = document.getElementById('agent-submit'); btn.disabled = true;
+    try {
+      if (editingId) {
+        await App.api(`/api/agents/${editingId}`, { method: 'PATCH', body });
+        App.toast('Agent updated', 'success');
+        App.modal('agent-modal').close();
+      } else {
+        const r = await App.api('/api/agents', { method: 'POST', body });
+        App.modal('agent-modal').close();
+        showToken(r.token);
+      }
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  load().catch((err) => App.toast(err.message, 'error'));
+  App.autoRefresh(load, 30000);
+</script>
+{% endblock %}

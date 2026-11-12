@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}Alerts{% endblock %}
+{% block heading %}Alerts{% endblock %}
+{% block subheading %}HDD, NVR and camera offline notifications{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-ghost btn-sm" id="run-health">Run health check</button>
+  {% if is_admin %}<button class="btn btn-sm" id="resolve-all">Resolve all</button>{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-4 mb-3" id="alert-stats"></div>
+<section class="card">
+  <div class="card-head">
+    <h2>Alert history</h2>
+    <div class="row">
+      <select class="select" id="filter" style="width:150px">
+        <option value="open">Open only</option>
+        <option value="all">All alerts</option>
+        <option value="resolved">Resolved</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+    </div>
+  </div>
+  <div class="table-wrap" id="alert-table"><div class="card-body"><div class="skeleton" style="height:150px"></div></div></div>
+</section>
+
+{% if is_admin %}
+<section class="card mt-3" id="exceptions">
+  <div class="card-head">
+    <div><h2>Alert exceptions</h2><span class="sub">Suppress ghost cameras, always-full disks or noisy alerts</span></div>
+    <button class="btn btn-ghost btn-sm" id="add-exception">Add exception</button>
+  </div>
+  <div class="table-wrap" id="exception-table"><div class="card-body"><div class="skeleton" style="height:110px"></div></div></div>
+</section>
+
+<div class="modal-backdrop" id="exception-modal">
+  <div class="modal">
+    <div class="modal-head"><h2>Add alert exception</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <form id="exception-form">
+      <div class="modal-body stack">
+        <p class="tiny faint">Leave a field blank to match everything in that dimension. For example choose <b>HDD</b> + an NVR to ignore its capacity alerts, or choose a camera and <b>Camera offline</b> for a ghost camera.</p>
+        <div class="form-grid">
+          <div class="field"><label>Alert type</label><select class="select" name="alert_type"><option value="">Any type</option><option value="camera_offline">Camera offline</option><option value="hdd">HDD / storage</option><option value="nvr_offline">NVR offline</option></select></div>
+          <div class="field"><label>NVR</label><select class="select" name="nvr_id" id="exc-nvr"><option value="">Any NVR</option></select></div>
+          <div class="field span-2"><label>Camera</label><select class="select" name="camera_id" id="exc-camera"><option value="">Any camera</option></select></div>
+          <div class="field span-2"><label>Exact fingerprint <span class="hint">(advanced)</span></label><input class="input mono" name="fingerprint" placeholder="e.g. nvr:1:cam:4:offline"></div>
+          <div class="field span-2"><label>Reason</label><input class="input" name="reason" placeholder="Ghost camera, always-full NVR disk, …"></div>
+        </div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-modal-close>Cancel</button><button class="btn" type="submit">Save exception</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="resolve-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-head"><h2 id="resolve-title">Resolve alert</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <form id="resolve-form">
+      <div class="modal-body stack">
+        <p class="tiny faint" id="resolve-context"></p>
+        <div class="field"><label>Resolve note <span class="hint">(optional)</span></label><textarea class="input" name="note" rows="3" placeholder="What was done, or why this alert is being closed…"></textarea></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-modal-close>Cancel</button><button class="btn" type="submit" id="resolve-submit">Resolve</button></div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+  let alerts = [];
+  let exceptions = [];
+  let nvrs = [];
+  let resolveTarget = null;
+
+  function renderStats() {
+    const open = alerts.filter((a) => !a.resolved).length;
+    const critical = alerts.filter((a) => !a.resolved && a.severity === 'critical').length;
+    const ack = alerts.filter((a) => a.acknowledged && !a.resolved).length;
+    const resolved = alerts.filter((a) => a.resolved).length;
+    document.getElementById('alert-stats').innerHTML = [
+      ['Open', open, open ? 'Needs attention' : 'All clear', open ? 'bad' : 'ok'],
+      ['Critical', critical, critical ? 'Immediate action' : 'None', critical ? 'bad' : 'ok'],
+      ['Acknowledged', ack, 'Being handled', ''],
+      ['Resolved', resolved, 'In selected range', ''],
+    ].map(([l, v, d, cls]) => `<div class="card stat-card"><div class="stat-value">${v}</div><div class="stat-label">${l}</div><div class="stat-delta ${cls}">${d}</div></div>`).join('');
+  }
+
+  function renderTable() {
+    const host = document.getElementById('alert-table');
+    if (!alerts.length) { host.innerHTML = App.emptyState('No alerts in this view.', ''); return; }
+    host.innerHTML = `<table><thead><tr><th>Alert</th><th>Severity</th><th class="hide-mobile">Source</th><th class="hide-mobile">When</th><th>Status</th><th></th></tr></thead><tbody>${alerts.map((a) => `<tr>
+      <td><div class="row" style="gap:8px"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${a.severity === 'critical' ? 'var(--danger)' : a.severity === 'warning' ? 'var(--warning)' : 'var(--info)'};display:inline-block"></span><div><div class="small strong">${App.escapeHtml(a.message)}</div><div class="tiny faint">${App.escapeHtml(a.type)}</div></div></div></td>
+      <td>${App.severityBadge(a.severity)}</td>
+      <td class="hide-mobile tiny">${App.escapeHtml(a.nvr || '—')}</td>
+      <td class="hide-mobile tiny faint">${App.timeAgo(a.created_at)}</td>
+      <td>${a.resolved ? '<span class="badge badge-success">Resolved</span>' : a.acknowledged ? '<span class="badge badge-info">Acknowledged</span>' : '<span class="badge badge-warning">Open</span>'}${a.resolved && a.resolve_note ? `<div class="tiny faint" style="margin-top:4px;max-width:190px">${App.escapeHtml(a.resolve_note)}</div>` : ''}</td>
+      <td><div class="actions">
+        ${!a.acknowledged && !a.resolved ? `<button class="btn btn-ghost btn-xs" data-ack="${a.id}">Ack</button>` : ''}
+        ${!a.resolved && IS_ADMIN ? `<button class="btn btn-ghost btn-xs" data-resolve="${a.id}">Resolve</button>` : ''}
+        ${!a.resolved && IS_ADMIN ? `<button class="btn btn-ghost btn-xs" data-ignore="${a.id}" title="Suppress this alert pattern">Ignore</button>` : ''}
+      </div></td>
+    </tr>`).join('')}</tbody></table>`;
+    host.querySelectorAll('[data-ack]').forEach((b) => b.addEventListener('click', async () => {
+      try { await App.api(`/api/alerts/${b.getAttribute('data-ack')}/acknowledge`, { method: 'POST' }); await load(); } catch (err) { App.toast(err.message, 'error'); }
+    }));
+    host.querySelectorAll('[data-resolve]').forEach((b) => b.addEventListener('click', () => {
+      const id = Number(b.getAttribute('data-resolve'));
+      const alert = alerts.find((item) => item.id === id);
+      resolveTarget = id;
+      document.getElementById('resolve-title').textContent = 'Resolve alert';
+      document.getElementById('resolve-context').textContent = alert ? alert.message : '';
+      document.getElementById('resolve-form').reset();
+      App.modal('resolve-modal').open();
+    }));
+    host.querySelectorAll('[data-ignore]').forEach((b) => b.addEventListener('click', async () => {
+      if (!await App.confirm('Suppress future alerts that match this exact pattern?', { confirm: 'Ignore pattern' })) return;
+      try { await App.api(`/api/alerts/${b.getAttribute('data-ignore')}/ignore`, { method: 'POST', body: { mode: 'fingerprint' } }); App.toast('Alert ignored', 'success'); await load(); }
+      catch (err) { App.toast(err.message, 'error'); }
+    }));
+  }
+
+  function renderExceptions() {
+    const host = document.getElementById('exception-table');
+    if (!host) return;
+    if (!exceptions.length) { host.innerHTML = App.emptyState('No exceptions. Alerts are fully active.', ''); return; }
+    host.innerHTML = `<table><thead><tr><th>Scope</th><th>Reason</th><th>State</th><th></th></tr></thead><tbody>${exceptions.map((e) => {
+      const parts = [];
+      if (e.alert_type) parts.push(e.alert_type);
+      if (e.nvr) parts.push('NVR: ' + e.nvr);
+      if (e.camera) parts.push('Camera: ' + e.camera);
+      if (e.fingerprint) parts.push('FP: ' + e.fingerprint);
+      return `<tr>
+        <td class="tiny">${App.escapeHtml(parts.join(' · ') || 'All')}</td>
+        <td class="tiny faint">${App.escapeHtml(e.reason || '—')}</td>
+        <td>${e.enabled ? '<span class="badge badge-warning">Muted</span>' : '<span class="badge">Disabled</span>'}</td>
+        <td><button class="btn btn-ghost btn-xs" style="color:var(--danger)" data-del-exc="${e.id}">Delete</button></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+    host.querySelectorAll('[data-del-exc]').forEach((b) => b.addEventListener('click', async () => {
+      try { await App.api(`/api/alert-exceptions/${b.getAttribute('data-del-exc')}`, { method: 'DELETE' }); App.toast('Exception removed', 'success'); await load(); }
+      catch (err) { App.toast(err.message, 'error'); }
+    }));
+  }
+
+  async function loadExceptions() {
+    if (!IS_ADMIN) return;
+    const data = await App.api('/api/alert-exceptions');
+    exceptions = data.exceptions;
+    renderExceptions();
+  }
+
+  async function loadTree() {
+    if (!IS_ADMIN) return;
+    const data = await App.api('/api/nvrs');
+    nvrs = data.nvrs;
+    const nvrSelect = document.getElementById('exc-nvr');
+    const camSelect = document.getElementById('exc-camera');
+    if (!nvrSelect || !camSelect) return;
+    nvrSelect.innerHTML = '<option value="">Any NVR</option>' + nvrs.map((n) => `<option value="${n.id}">${App.escapeHtml(n.name)}</option>`).join('');
+    const fillCameras = () => {
+      const id = Number(nvrSelect.value || 0);
+      const cams = id ? (nvrs.find((n) => n.id === id)?.cameras || []) : [];
+      camSelect.innerHTML = '<option value="">Any camera</option>' + cams.map((c) => `<option value="${c.id}">CH${c.channel} · ${App.escapeHtml(c.name)}</option>`).join('');
+    };
+    nvrSelect.onchange = fillCameras;
+    fillCameras();
+  }
+
+  async function load() {
+    const filter = document.getElementById('filter').value;
+    let url = '/api/alerts?limit=300';
+    if (filter === 'open') url += '&resolved=false';
+    if (filter === 'resolved') url += '&resolved=true';
+    const [data] = await Promise.all([App.api(url), loadExceptions()]);
+    alerts = data.alerts;
+    renderStats();
+    renderTable();
+  }
+
+  document.getElementById('filter').addEventListener('change', load);
+  document.getElementById('refresh').addEventListener('click', load);
+  document.getElementById('run-health').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Checking…';
+    try { const r = await App.api('/api/health/run', { method: 'POST' }); App.toast(`Checked ${r.checked} NVR(s) · ${r.notifications} notification(s)`, 'success'); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Run health check'; }
+  });
+  document.getElementById('resolve-all')?.addEventListener('click', () => {
+    resolveTarget = 'all';
+    document.getElementById('resolve-title').textContent = 'Resolve all open alerts';
+    document.getElementById('resolve-context').textContent = 'This closes every alert that is currently open.';
+    document.getElementById('resolve-form').reset();
+    App.modal('resolve-modal').open();
+  });
+  document.getElementById('resolve-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const note = new FormData(e.target).get('note') || '';
+    try {
+      if (resolveTarget === 'all') {
+        const r = await App.api('/api/alerts/resolve-all', { method: 'POST', body: { note } });
+        App.toast(`${r.resolved} alert(s) resolved`, 'success');
+      } else {
+        await App.api(`/api/alerts/${resolveTarget}/resolve`, { method: 'POST', body: { note } });
+        App.toast('Alert resolved', 'success');
+      }
+      App.modal('resolve-modal').close();
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+  });
+  document.getElementById('add-exception')?.addEventListener('click', () => {
+    document.getElementById('exception-form').reset();
+    App.modal('exception-modal').open();
+  });
+  document.getElementById('exception-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const value = (key) => { const v = (data.get(key) || '').trim(); return v || null; };
+    const body = {
+      alert_type: value('alert_type'),
+      nvr_id: value('nvr_id') ? Number(value('nvr_id')) : null,
+      camera_id: value('camera_id') ? Number(value('camera_id')) : null,
+      fingerprint: value('fingerprint'),
+      reason: value('reason'),
+      enabled: true,
+    };
+    if (!body.alert_type && !body.nvr_id && !body.camera_id && !body.fingerprint) {
+      App.toast('Choose at least one scope', 'error');
+      return;
+    }
+    try {
+      await App.api('/api/alert-exceptions', { method: 'POST', body });
+      App.toast('Exception saved', 'success');
+      App.modal('exception-modal').close();
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+  });
+  loadTree();
+  App.autoRefresh(load, 20000);
+</script>
+{% endblock %}
