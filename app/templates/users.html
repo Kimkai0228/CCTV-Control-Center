@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block heading %}Users{% endblock %}
+{% block subheading %}Accounts, roles and access control{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-sm" id="add-user">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    Add user
+  </button>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-4 mb-3" id="user-stats"></div>
+<section class="card">
+  <div class="card-head"><h2>Accounts</h2><span class="sub">Super admin is managed by <code class="kbd">.env</code></span></div>
+  <div class="table-wrap" id="users-table"><div class="card-body"><div class="skeleton" style="height:160px"></div></div></div>
+</section>
+
+<!-- Create / edit user -->
+<div class="modal-backdrop" id="user-modal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="user-modal-title">Add user</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <form id="user-form">
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field"><label>Username</label><input class="input" name="username" required placeholder="john.doe"></div>
+          <div class="field"><label>Email</label><input class="input" name="email" type="email" placeholder="john.doe@footprintsschool.edu.kh"></div>
+          <div class="field" id="password-field"><label>Password</label><input class="input" name="password" type="password" placeholder="At least 6 characters"></div>
+          <div class="field"><label>Role</label>
+            <select class="select" name="role">
+              <option value="operator">Operator — can download footage</option>
+              <option value="viewer">Viewer — read only</option>
+              <option value="admin">Admin — manage users and NVRs</option>
+            </select>
+          </div>
+          <div class="field span-2"><label>Telegram user ID <span class="hint">(optional link for MiniApp)</span></label><input class="input" name="telegram_user_id" placeholder="123456789"></div>
+        </div>
+        <label class="switch mt-2" id="active-field"><input type="checkbox" name="is_active" checked><span class="track"></span><span class="small">Account active</span></label>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-modal-close>Cancel</button><button class="btn" type="submit" id="user-save">Create user</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Reset password -->
+<div class="modal-backdrop" id="reset-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-head"><h2>Reset password</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <form id="reset-form">
+      <div class="modal-body">
+        <p class="small muted mb-2" id="reset-target">—</p>
+        <div class="field"><label>New password</label><input class="input" name="password" type="password" minlength="6" required placeholder="At least 6 characters"></div>
+        <div class="field mt-2"><label>Confirm password</label><input class="input" name="confirm" type="password" minlength="6" required></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-modal-close>Cancel</button><button class="btn" type="submit">Update password</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let users = [];
+  let editId = null;
+  let resetId = null;
+
+  function roleBadge(role) {
+    const map = { superadmin: 'badge-danger', admin: 'badge-info', operator: 'badge-success', viewer: 'badge' };
+    return `<span class="badge ${map[role] || 'badge'}">${App.escapeHtml(role)}</span>`;
+  }
+
+  function render() {
+    const total = users.length;
+    const active = users.filter((u) => u.is_active).length;
+    const admins = users.filter((u) => ['admin','superadmin'].includes(u.role)).length;
+    const linked = users.filter((u) => u.telegram_user_id).length;
+    document.getElementById('user-stats').innerHTML = [
+      ['Accounts', total], ['Active', active], ['Admins', admins], ['Telegram linked', linked],
+    ].map(([l, v]) => `<div class="card stat-card"><div class="stat-value">${v}</div><div class="stat-label">${l}</div></div>`).join('');
+
+    const host = document.getElementById('users-table');
+    if (!users.length) { host.innerHTML = App.emptyState('No users yet.', ''); return; }
+    host.innerHTML = `<table><thead><tr><th>User</th><th>Role</th><th>Status</th><th class="hide-mobile">Telegram</th><th class="hide-mobile">Last login</th><th></th></tr></thead><tbody>${users.map((u) => `<tr>
+      <td><div class="row" style="gap:9px"><span class="avatar" style="width:30px;height:30px;font-size:.68rem;border-radius:9px">${App.escapeHtml((u.username || '?').slice(0,2).toUpperCase())}</span><div><b>${App.escapeHtml(u.username)}</b><div class="tiny faint">${App.escapeHtml(u.email || 'no email')}</div></div></div></td>
+      <td>${roleBadge(u.role)}</td>
+      <td>${u.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Disabled</span>'}</td>
+      <td class="hide-mobile mono tiny">${App.escapeHtml(u.telegram_user_id || '—')}</td>
+      <td class="hide-mobile tiny faint">${u.last_login ? App.timeAgo(u.last_login) : 'never'}</td>
+      <td><div class="actions">
+        <button class="btn btn-ghost btn-xs" data-edit="${u.id}">Edit</button>
+        <button class="btn btn-ghost btn-xs" data-reset="${u.id}">Reset password</button>
+        ${u.role !== 'superadmin' && u.id !== {{ user.id }} ? `<button class="btn btn-ghost btn-xs" style="color:var(--danger)" data-del="${u.id}">Delete</button>` : ''}
+      </div></td>
+    </tr>`).join('')}</tbody></table>`;
+    host.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => openEdit(Number(b.getAttribute('data-edit')))));
+    host.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', () => openReset(Number(b.getAttribute('data-reset')))));
+    host.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => remove(Number(b.getAttribute('data-del')))));
+  }
+
+  async function load() {
+    const data = await App.api('/api/users');
+    users = data.users;
+    render();
+  }
+
+  function openEdit(id) {
+    const u = users.find((x) => x.id === id); if (!u) return;
+    editId = id;
+    const form = document.getElementById('user-form');
+    form.reset();
+    document.getElementById('user-modal-title').textContent = 'Edit user';
+    document.getElementById('user-save').textContent = 'Save changes';
+    document.getElementById('password-field').classList.add('hide');
+    document.getElementById('active-field').classList.remove('hide');
+    form.username.value = u.username; form.username.disabled = true;
+    form.email.value = u.email || '';
+    form.role.value = u.role === 'superadmin' ? 'admin' : u.role;
+    form.role.disabled = u.role === 'superadmin';
+    form.telegram_user_id.value = u.telegram_user_id || '';
+    form.querySelector('[name=is_active]').checked = u.is_active;
+    App.modal('user-modal').open();
+  }
+
+  function openAdd() {
+    editId = null;
+    const form = document.getElementById('user-form'); form.reset();
+    form.username.disabled = false; form.role.disabled = false;
+    document.getElementById('user-modal-title').textContent = 'Add user';
+    document.getElementById('user-save').textContent = 'Create user';
+    document.getElementById('password-field').classList.remove('hide');
+    document.getElementById('active-field').classList.add('hide');
+    App.modal('user-modal').open();
+  }
+
+  document.getElementById('add-user').addEventListener('click', openAdd);
+  document.getElementById('user-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const btn = document.getElementById('user-save'); btn.disabled = true;
+    try {
+      if (editId) {
+        await App.api(`/api/users/${editId}`, { method: 'PATCH', body: {
+          email: form.email.value.trim() || null,
+          role: form.role.value,
+          is_active: form.querySelector('[name=is_active]').checked,
+          telegram_user_id: form.telegram_user_id.value.trim() || null,
+        }});
+        App.toast('User updated', 'success');
+      } else {
+        await App.api('/api/users', { method: 'POST', body: {
+          username: form.username.value.trim(), email: form.email.value.trim() || null,
+          password: form.password.value, role: form.role.value,
+          telegram_user_id: form.telegram_user_id.value.trim() || null,
+        }});
+        App.toast('User created', 'success');
+      }
+      App.modal('user-modal').close();
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  function openReset(id) {
+    const u = users.find((x) => x.id === id); if (!u) return;
+    resetId = id;
+    document.getElementById('reset-target').textContent = `Set a new password for ${u.username}. Their current session will be revoked.`;
+    document.getElementById('reset-form').reset();
+    App.modal('reset-modal').open();
+  }
+  document.getElementById('reset-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    if (form.password.value !== form.confirm.value) { App.toast('Passwords do not match', 'error'); return; }
+    try {
+      await App.api(`/api/users/${resetId}/reset-password`, { method: 'POST', body: { password: form.password.value } });
+      App.toast('Password updated', 'success');
+      App.modal('reset-modal').close();
+    } catch (err) { App.toast(err.message, 'error'); }
+  });
+
+  async function remove(id) {
+    const u = users.find((x) => x.id === id);
+    if (!await App.confirm(`Delete ${u ? u.username : 'this user'}? They will lose access immediately.`, { danger: true, confirm: 'Delete user' })) return;
+    try { await App.api(`/api/users/${id}`, { method: 'DELETE' }); App.toast('User deleted', 'success'); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+  }
+
+  load().catch((err) => App.toast(err.message, 'error'));
+</script>
+{% endblock %}

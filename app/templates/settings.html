@@ -1,0 +1,457 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+{% block subheading %}Customize branding, compression, monitoring and retention{% endblock %}
+
+{% block content %}
+<div class="tabs mb-3" id="settings-tabs">
+  <button type="button" class="tab active" data-tab="settings-branding">Branding</button>
+  <button type="button" class="tab" data-tab="settings-compression">Compression</button>
+  <button type="button" class="tab" data-tab="settings-jobs">Jobs &amp; storage</button>
+  <button type="button" class="tab" data-tab="settings-agents">Agents &amp; API</button>
+  <button type="button" class="tab" data-tab="settings-health">Health</button>
+  <button type="button" class="tab" data-tab="settings-security">Security</button>
+  <button type="button" class="tab" data-tab="settings-logs">Logs</button>
+</div>
+
+<div class="tab-panel active" id="settings-branding">
+  <div class="grid split-grid">
+    <section class="card" id="branding">
+      <div class="card-head"><h2>Branding &amp; appearance</h2><span class="sub">Shown across the WebUI and MiniApp</span></div>
+      <div class="card-body stack">
+        <div class="form-grid">
+          <div class="field"><label>App name</label><input class="input" data-setting="app.name"></div>
+          <div class="field"><label>Organization</label><input class="input" data-setting="app.organization"></div>
+          <div class="field span-2"><label>Public URL <span class="hint">(used for Telegram MiniApp)</span></label><input class="input" data-setting="app.public_url" placeholder="https://cctv.footprints.work"></div>
+          <div class="field"><label>Theme</label><select class="select" data-setting="app.theme"><option value="light">Light</option><option value="dark">Dark</option><option value="auto">Auto</option></select></div>
+          <div class="field"><label>Campus of this host</label><input class="input" data-setting="app.campus" placeholder="tk"></div>
+          <div class="field"><label>Logo URL <span class="hint">(optional)</span></label><input class="input" data-setting="app.logo_url" placeholder="https://…/logo.png"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Primary color</label><div class="row"><input type="color" data-setting="app.primary_color" style="width:46px;height:38px;border:1px solid var(--border);border-radius:9px;background:transparent"><code class="mono tiny" data-color-label="app.primary_color"></code></div></div>
+          <div class="field"><label>Secondary color</label><div class="row"><input type="color" data-setting="app.secondary_color" style="width:46px;height:38px;border:1px solid var(--border);border-radius:9px;background:transparent"><code class="mono tiny" data-color-label="app.secondary_color"></code></div></div>
+          <div class="field"><label>Accent color</label><div class="row"><input type="color" data-setting="app.accent_color" style="width:46px;height:38px;border:1px solid var(--border);border-radius:9px;background:transparent"><code class="mono tiny" data-color-label="app.accent_color"></code></div></div>
+          <div class="field"><label>Background color</label><div class="row"><input type="color" data-setting="app.background_color" style="width:46px;height:38px;border:1px solid var(--border);border-radius:9px;background:transparent"><code class="mono tiny" data-color-label="app.background_color"></code></div></div>
+        </div>
+        <div class="row-between"><span class="tiny faint">Palette: {{ config.colors.primary }} · {{ config.colors.secondary }} · {{ config.colors.accent }} · {{ config.colors.background }}</span><button class="btn" data-save="branding">Save branding</button></div>
+      </div>
+    </section>
+    <aside class="stack">
+      <section class="card card-pad">
+        <h3>Environment</h3>
+        <div class="stack mt-2" style="gap:9px">
+          <div class="row-between small"><span class="faint">Public URL</span><span class="mono tiny">{{ public_url }}</span></div>
+          <div class="row-between small"><span class="faint">Timezone</span><span class="mono tiny" id="timezone">—</span></div>
+          <div class="row-between small"><span class="faint">Super admin</span><span class="mono tiny">{{ user.username }}</span></div>
+          <div class="row-between small"><span class="faint">Web port</span><span class="mono tiny">5555</span></div>
+        </div>
+        <div class="divider"></div>
+        <p class="tiny faint">Super-admin credentials and the encryption secret live in <code class="kbd">.env</code>. All other configuration is stored in the database.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="tab-panel" id="settings-compression">
+  <div class="grid split-grid">
+    <section class="card" id="compression">
+      <div class="card-head"><h2>Video compression</h2><span id="qsv-badge" class="badge">Checking…</span></div>
+      <div class="card-body stack">
+        <div class="alert-row info" style="align-items:center">
+          <span class="dot"></span>
+          <div class="msg"><b id="qsv-title">Detecting Intel QuickSync…</b><div class="tiny faint mt-1" id="qsv-detail">—</div></div>
+          <button class="btn btn-ghost btn-xs" id="probe-qsv">Re-probe</button>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Backend</label><select class="select" data-setting="compression.backend"><option value="auto">Auto — hardware, fallback to CPU</option><option value="qsv">QuickSync (QSV/MFX) only</option><option value="vaapi">QuickSync (VAAPI) only</option><option value="software">Software (libx264) only</option></select></div>
+          <div class="field"><label>Enabled</label><label class="switch" style="margin-top:9px"><input type="checkbox" data-setting="compression.enabled"><span class="track"></span><span class="small">Compress before upload</span></label></div>
+          <div class="field"><label>QuickSync preset</label><select class="select" data-setting="compression.qsv_preset"><option value="veryfast">veryfast</option><option value="faster">faster</option><option value="fast">fast</option><option value="medium">medium</option></select></div>
+          <div class="field"><label>QuickSync quality <span class="hint">(lower = better, 20–30)</span></label><input class="input" type="number" min="1" max="51" data-setting="compression.qsv_quality"></div>
+          <div class="field"><label>CPU preset</label><select class="select" data-setting="compression.cpu_preset"><option value="ultrafast">ultrafast</option><option value="superfast">superfast</option><option value="veryfast">veryfast</option><option value="faster">faster</option></select></div>
+          <div class="field"><label>CPU CRF <span class="hint">(lower = better, 26–34)</span></label><input class="input" type="number" min="1" max="51" data-setting="compression.cpu_crf"></div>
+          <div class="field"><label>Parallel compressors</label><input class="input" type="number" min="1" max="8" data-setting="compression.max_parallel"></div>
+        </div>
+        <div class="row-between"><span class="tiny faint">QuickSync is auto-detected at runtime (QSV/MFX first, then VAAPI). If the GPU probe fails, jobs switch to libx264 immediately.</span><button class="btn" data-save="compression">Save compression</button></div>
+      </div>
+    </section>
+    <aside class="stack">
+      <section class="card card-pad">
+        <h3>How compression is chosen</h3>
+        <p class="small muted mt-1">QuickSync is auto-detected at runtime: QSV/MFX first, then VAAPI. If the GPU probe fails, jobs fall back to libx264 immediately.</p>
+        <div class="divider"></div>
+        <p class="tiny faint">Lower quality values produce better video but larger files. Use <b>Re-probe</b> after changing hardware or drivers.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="tab-panel" id="settings-jobs">
+  <div class="grid split-grid">
+    <section class="card" id="jobs">
+      <div class="card-head"><h2>Jobs &amp; storage</h2></div>
+      <div class="card-body stack">
+        <div class="form-grid">
+          <div class="field"><label>Max concurrent jobs</label><input class="input" type="number" min="1" max="8" data-setting="jobs.max_workers"></div>
+          <div class="field"><label>Keep local files (days)</label><input class="input" type="number" min="1" max="365" data-setting="jobs.keep_local_days"></div>
+          <div class="field"><label>Agent keep files (days)</label><input class="input" type="number" min="1" max="365" data-setting="agents.keep_files_days"></div>
+          <div class="field"><label>Default folder name</label><input class="input" data-setting="jobs.default_folder_name"></div>
+        </div>
+        <div class="row-between"><span class="tiny faint">Main-host copies are downloadable until retention expires. Agent files stay on the campus host for the agent retention period when direct download is enabled.</span><button class="btn" data-save="jobs">Save jobs</button></div>
+      </div>
+    </section>
+    <aside class="stack">
+      <section class="card card-pad">
+        <h3>Retention</h3>
+        <p class="small muted mt-1">Main-host copies are downloadable until the local retention expires.</p>
+        <p class="small muted mt-1">Campus agent files stay on the agent host for the agent retention period when direct download is enabled.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="tab-panel" id="settings-agents">
+  <div class="grid split-grid">
+    <section class="card" id="agents">
+      <div class="card-head"><h2>Campus agents &amp; REST API</h2><span class="sub">Route downloads to a local campus worker</span></div>
+      <div class="card-body stack">
+        <div class="form-grid">
+          <div class="field"><label>Agents enabled</label><label class="switch" style="margin-top:9px"><input type="checkbox" data-setting="agents.enabled"><span class="track"></span><span class="small">Dispatch jobs to agents</span></label></div>
+          <div class="field"><label>Strict campus</label><label class="switch" style="margin-top:9px"><input type="checkbox" data-setting="agents.strict_campus"><span class="track"></span><span class="small">Refuse cross-campus downloads</span></label></div>
+          <div class="field"><label>Fallback to local</label><label class="switch" style="margin-top:9px"><input type="checkbox" data-setting="agents.fallback_local"><span class="track"></span><span class="small">Run here if no agent claims</span></label></div>
+          <div class="field"><label>Claim timeout (minutes)</label><input class="input" type="number" min="1" max="120" data-setting="agents.claim_timeout_minutes"></div>
+          <div class="field"><label>Running job timeout (minutes)</label><input class="input" type="number" min="10" max="1440" data-setting="agents.job_timeout_minutes"></div>
+          <div class="field"><label>Agent offline after (minutes)</label><input class="input" type="number" min="1" max="60" data-setting="agents.heartbeat_offline_minutes"></div>
+          <div class="field"><label>Agent poll interval (seconds)</label><input class="input" type="number" min="5" max="300" data-setting="agents.poll_seconds"></div>
+          <div class="field"><label>Direct agent download</label><label class="switch" style="margin-top:9px"><input type="checkbox" data-setting="agents.direct_download"><span class="track"></span><span class="small">Serve finished files from the campus agent</span></label></div>
+          <div class="field"><label>REST API enabled</label><label class="switch" style="margin-top:9px"><input type="checkbox" data-setting="api.enabled"><span class="track"></span><span class="small">Expose /api/v1 with an API key</span></label></div>
+        </div>
+        <div class="row-between"><span class="tiny faint">Agents are managed on the <a href="/agents">Agents page</a>. Set each agent's public HTTPS URL there; direct download needs it and uses signed links, never the agent token.</span><button class="btn" data-save="agents">Save agents</button></div>
+        <div class="row-between">
+          <div class="msg"><b>Camera REST API</b><div class="tiny faint">GET <code class="kbd">/api/v1/cameras</code> with <code class="kbd">X-API-Key</code></div></div>
+          <button class="btn btn-ghost btn-sm" id="rotate-api-key" {% if not is_superadmin %}disabled title="Super admin only"{% endif %}>Generate new API key</button>
+        </div>
+      </div>
+    </section>
+    <aside class="stack">
+      <section class="card card-pad">
+        <h3>Routing</h3>
+        <p class="small muted mt-1">Agents are managed on the <a href="/agents">Campus agents</a> page. Set each agent's public HTTPS URL there; direct download needs it and uses signed links, never the agent token.</p>
+        <div class="divider"></div>
+        <p class="tiny faint"><b>Strict campus</b> refuses cross-campus downloads. <b>Fallback</b> lets the main host pick up a job when no agent claims it.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="tab-panel" id="settings-health">
+  <div class="grid split-grid">
+    <section class="card" id="health">
+      <div class="card-head"><h2>Health monitoring</h2><span id="health-badge" class="badge">…</span></div>
+      <div class="card-body stack">
+        <label class="switch"><input type="checkbox" data-setting="health.enabled"><span class="track"></span><span class="small">Run scheduled checks</span></label>
+        <div class="form-grid">
+          <div class="field"><label>Interval (minutes)</label><input class="input" type="number" min="1" max="1440" data-setting="health.interval_minutes"></div>
+          <div class="field"><label>Alert cooldown (minutes)</label><input class="input" type="number" min="5" max="1440" data-setting="health.alert_cooldown_minutes"></div>
+          <div class="field"><label>HDD threshold (%)</label><input class="input" type="number" min="50" max="100" data-setting="health.hdd_threshold_percent"></div>
+        </div>
+        <label class="switch"><input type="checkbox" data-setting="health.nvr_offline_alert"><span class="track"></span><span class="small">Alert when an NVR is offline</span></label>
+        <label class="switch"><input type="checkbox" data-setting="health.offline_camera_alert"><span class="track"></span><span class="small">Alert when a camera is offline</span></label>
+        <label class="switch"><input type="checkbox" data-setting="health.hdd_capacity_alert"><span class="track"></span><span class="small">Also alert when an HDD is nearly full <span class="hint">(off = error/corruption only)</span></span></label>
+        <div class="row-between"><button class="btn btn-ghost" id="run-health">Run check now</button><button class="btn" data-save="health">Save health</button></div>
+      </div>
+    </section>
+    <aside class="stack">
+      <section class="card card-pad">
+        <h3>Alerting</h3>
+        <p class="small muted mt-1">Checks run on the configured interval. Alerts are stored in the <a href="/alerts">Alerts</a> page and delivered to Telegram when alerting is enabled.</p>
+        <div class="divider"></div>
+        <p class="tiny faint">Add exceptions on the Alerts page to silence known cameras or disks.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="tab-panel" id="settings-security">
+  <div class="grid split-grid">
+    <section class="card" id="security">
+      <div class="card-head"><h2>Security</h2></div>
+      <div class="card-body stack">
+        <div class="form-grid">
+          <div class="field"><label>Session lifetime (hours)</label><input class="input" type="number" min="1" max="720" data-setting="security.session_hours"></div>
+        </div>
+        <div class="row-between"><span class="tiny faint">Changing this takes effect on the next restart.</span><button class="btn" data-save="security">Save security</button></div>
+      </div>
+    </section>
+    <aside class="stack">
+      <section class="card card-pad">
+        <h3>Quick links</h3>
+        <div class="stack mt-2" style="gap:7px">
+          <a class="btn btn-ghost btn-block btn-sm" href="/integrations">Manage integrations</a>
+          <a class="btn btn-ghost btn-block btn-sm" href="/users">Manage users</a>
+          <a class="btn btn-ghost btn-block btn-sm" href="/miniapp" target="_blank">Preview MiniApp</a>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="tab-panel" id="settings-logs">
+  <section class="card" id="logs">
+    <div class="card-head">
+      <div>
+        <h2>Logs &amp; diagnostics</h2>
+        <span class="sub">Audit trail and system warnings for troubleshooting</span>
+      </div>
+      <div class="row" style="gap:6px">
+        <button class="btn btn-ghost btn-sm" id="logs-refresh">Refresh</button>
+        <a class="btn btn-ghost btn-sm" id="logs-download" href="/api/logs/system/download" download>Download log</a>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="tabs" id="log-tabs">
+        <button type="button" class="tab active" data-log-tab="activity" data-tab="log-panel-activity">Activity</button>
+        <button type="button" class="tab" data-log-tab="system" data-tab="log-panel-system">System</button>
+      </div>
+
+      <div class="log-toolbar mt-2">
+        <select class="select" id="log-level" style="max-width:150px"></select>
+        <input class="input" id="log-search" placeholder="Search logs…" style="flex:1;min-width:180px" autocomplete="off">
+        <span class="tiny faint" id="log-count"></span>
+      </div>
+
+      <div class="tab-panel active" id="log-panel-activity">
+        <div class="log-list" id="activity-list">
+          <div class="skeleton" style="height:58px;margin:10px"></div>
+          <div class="skeleton" style="height:58px;margin:10px"></div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="log-panel-system">
+        <pre class="log-terminal" id="system-list">Loading…</pre>
+      </div>
+
+      <p class="tiny faint mt-2" id="log-hint">Activity shows logins, settings changes and job lifecycle results. System shows warnings/errors written to <code class="kbd">data/logs/cctv.log</code>.</p>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let values = {};
+  let sections = {
+    branding: ['app.name','app.organization','app.public_url','app.theme','app.campus','app.logo_url','app.primary_color','app.secondary_color','app.accent_color','app.background_color'],
+    compression: ['compression.enabled','compression.backend','compression.qsv_preset','compression.qsv_quality','compression.cpu_preset','compression.cpu_crf','compression.max_parallel'],
+    jobs: ['jobs.max_workers','jobs.keep_local_days','agents.keep_files_days','jobs.default_folder_name'],
+    security: ['security.session_hours'],
+    health: ['health.enabled','health.interval_minutes','health.alert_cooldown_minutes','health.hdd_threshold_percent','health.nvr_offline_alert','health.offline_camera_alert','health.hdd_capacity_alert'],
+    agents: ['agents.enabled','agents.strict_campus','agents.fallback_local','agents.claim_timeout_minutes','agents.job_timeout_minutes','agents.heartbeat_offline_minutes','agents.poll_seconds','agents.direct_download','api.enabled'],
+  };
+
+  function fill() {
+    document.querySelectorAll('[data-setting]').forEach((el) => {
+      const key = el.getAttribute('data-setting');
+      const value = values[key];
+      if (el.type === 'checkbox') el.checked = String(value).toLowerCase() === 'true' || value === true;
+      else if (el.type === 'color') { if (value) el.value = value; }
+      else if (value != null) el.value = value;
+    });
+    document.querySelectorAll('[data-color-label]').forEach((label) => {
+      const input = document.querySelector(`[data-setting="${label.getAttribute('data-color-label')}"]`);
+      label.textContent = input ? input.value : '';
+    });
+    document.querySelectorAll('input[type=color]').forEach((input) => {
+      input.addEventListener('input', () => {
+        const label = document.querySelector(`[data-color-label="${input.getAttribute('data-setting')}"]`);
+        if (label) label.textContent = input.value;
+      });
+    });
+    document.getElementById('timezone').textContent = values['app.timezone'] || '—';
+    const enabled = String(values['health.enabled']).toLowerCase() === 'true';
+    const badge = document.getElementById('health-badge');
+    badge.className = 'badge ' + (enabled ? 'badge-success' : '');
+    badge.textContent = enabled ? 'Enabled' : 'Disabled';
+  }
+
+  function collect(keys) {
+    const out = {};
+    keys.forEach((key) => {
+      const el = document.querySelector(`[data-setting="${key}"]`);
+      if (!el) return;
+      if (el.type === 'checkbox') out[key] = el.checked;
+      else out[key] = el.value;
+    });
+    return out;
+  }
+
+  async function save(section) {
+    const btn = document.querySelector(`[data-save="${section}"]`);
+    if (btn) { btn.disabled = true; }
+    try {
+      const result = await App.api('/api/settings', { method: 'PUT', body: { values: collect(sections[section]) } });
+      if (result.errors && result.errors.length) App.toast(result.errors.join(' · '), 'error');
+      else App.toast('Settings saved', 'success');
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { if (btn) btn.disabled = false; }
+  }
+
+  function renderCompression(c) {
+    const badge = document.getElementById('qsv-badge');
+    const label = c.backend === 'qsv' ? 'QuickSync (QSV)' : c.backend === 'vaapi' ? 'QuickSync (VAAPI)' : null;
+    badge.className = 'badge ' + (c.available ? 'badge-success' : 'badge-warning');
+    badge.textContent = label ? label + ' ready' : 'CPU fallback';
+    document.getElementById('qsv-title').textContent = label ? 'Intel QuickSync available — ' + label : 'Software compression active';
+    document.getElementById('qsv-detail').textContent = c.detail || (c.render_node ? 'Render node mapped' : 'No /dev/dri render node');
+  }
+
+  async function load() {
+    const data = await App.api('/api/settings');
+    values = data.values;
+    fill();
+    renderCompression(data.compression);
+  }
+
+  document.querySelectorAll('[data-save]').forEach((btn) => btn.addEventListener('click', () => save(btn.getAttribute('data-save'))));
+  document.getElementById('run-health').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Checking…';
+    try { const r = await App.api('/api/health/run', { method: 'POST' }); App.toast(`Checked ${r.checked} NVR(s) · ${r.online} online · ${r.notifications} notice(s)`, 'success'); }
+    catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Run check now'; }
+  });
+  document.getElementById('rotate-api-key')?.addEventListener('click', async (e) => {
+    if (!await App.confirm('Generate a new API key? The old key stops working immediately.', { confirm: 'Generate key' })) return;
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      const r = await App.api('/api/system/api-key/rotate', { method: 'POST' });
+      await App.copyText(r.key);
+      App.toast('New API key copied to clipboard', 'success');
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+  document.getElementById('probe-qsv').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Probing…';
+    try { const r = await App.api('/api/system/compression/probe', { method: 'POST' }); renderCompression(r); App.toast(r.detail, r.available ? 'success' : 'info'); }
+    catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Re-probe'; }
+  });
+
+  // ------------------------------------------------------- logs & diagnostics
+  const LOG_LEVELS = {
+    activity: [['all', 'All levels'], ['success', 'Success'], ['info', 'Info'], ['warning', 'Warning'], ['error', 'Error']],
+    system: [['all', 'All levels'], ['error', 'Errors only'], ['warning', 'Warnings +'], ['info', 'Info +'], ['debug', 'Everything']],
+  };
+  let logTab = 'activity';
+  let logRequestId = 0;
+
+  function fillLogLevels() {
+    const select = document.getElementById('log-level');
+    if (!select) return;
+    select.innerHTML = LOG_LEVELS[logTab].map(([value, label]) =>
+      `<option value="${value}">${label}</option>`).join('');
+  }
+
+  function renderActivityLog(entries, total) {
+    const host = document.getElementById('activity-list');
+    if (!host) return;
+    const count = document.getElementById('log-count');
+    if (count) count.textContent = `Showing ${entries.length} of ${total}`;
+    if (!entries.length) {
+      host.innerHTML = '<div class="log-empty">No activity matches these filters.</div>';
+      return;
+    }
+    host.innerHTML = entries.map((entry) => `<div class="log-row">
+      <span class="log-badge ${App.escapeHtml(entry.level)}">${App.escapeHtml(entry.level)}</span>
+      <div class="log-main">
+        <div class="log-action">${App.escapeHtml(entry.action)}<span class="chip">${App.escapeHtml(entry.username)}</span>${entry.ip ? `<span class="tiny faint mono">${App.escapeHtml(entry.ip)}</span>` : ''}</div>
+        ${entry.detail ? `<div class="log-detail">${App.escapeHtml(entry.detail)}</div>` : ''}
+      </div>
+      <div class="log-time" title="${App.escapeHtml(entry.created_at || '')}">${App.timeAgo(entry.created_at)}</div>
+    </div>`).join('');
+  }
+
+  function renderSystemLog(data) {
+    const host = document.getElementById('system-list');
+    if (!host) return;
+    if (data.missing) {
+      host.innerHTML = '<span class="log-empty">The system log file has not been created yet. It appears after the first warning or restart.</span>';
+      const count = document.getElementById('log-count');
+      if (count) count.textContent = 'No file yet';
+      return;
+    }
+    if (!data.lines.length) {
+      host.innerHTML = '<span class="log-empty">No lines match these filters.</span>';
+      const count = document.getElementById('log-count');
+      if (count) count.textContent = '0 lines';
+      return;
+    }
+    host.innerHTML = data.lines.map((line) => {
+      let level = '';
+      if (line.includes('[ERROR]') || line.includes('[CRITICAL]')) level = 'err';
+      else if (line.includes('[WARNING]')) level = 'warn';
+      else if (line.includes('[INFO]')) level = 'info';
+      return `<span class="log-line ${level}">${App.escapeHtml(line)}</span>`;
+    }).join('\n');
+    host.scrollTop = host.scrollHeight;
+    const count = document.getElementById('log-count');
+    if (count) count.textContent = `${data.lines.length} line(s) · ${App.fmtBytes(data.size)}`;
+  }
+
+  async function loadLogs() {
+    if (!document.getElementById('logs')) return;
+    const requestId = ++logRequestId;
+    const level = document.getElementById('log-level')?.value || 'all';
+    const term = (document.getElementById('log-search')?.value || '').trim();
+    const params = new URLSearchParams({ level });
+    if (term) params.set('q', term);
+    const url = logTab === 'activity'
+      ? `/api/logs/activity?${params.toString()}&limit=200`
+      : `/api/logs/system?${params.toString()}&lines=400`;
+    if (logTab === 'activity') {
+      const host = document.getElementById('activity-list');
+      if (host && !host.children.length) host.innerHTML = '<div class="log-empty">Loading…</div>';
+    }
+    try {
+      const data = await App.api(url);
+      if (requestId !== logRequestId) return;
+      if (logTab === 'activity') renderActivityLog(data.entries || [], data.total || 0);
+      else renderSystemLog(data);
+    } catch (err) {
+      if (requestId !== logRequestId) return;
+      const host = logTab === 'activity' ? document.getElementById('activity-list') : document.getElementById('system-list');
+      if (host) host.innerHTML = `<div class="log-empty">${App.escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function setupLogs() {
+    if (!document.getElementById('logs')) return;
+    fillLogLevels();
+
+    document.querySelectorAll('[data-log-tab]').forEach((button) => {
+      button.addEventListener('click', () => {
+        logTab = button.getAttribute('data-log-tab') === 'system' ? 'system' : 'activity';
+        document.querySelectorAll('[data-log-tab]').forEach((tab) => tab.classList.toggle('active', tab === button));
+        document.getElementById('log-panel-activity').classList.toggle('active', logTab === 'activity');
+        document.getElementById('log-panel-system').classList.toggle('active', logTab === 'system');
+        const hint = document.getElementById('log-hint');
+        if (hint) {
+          hint.innerHTML = logTab === 'activity'
+            ? 'Activity shows logins, settings changes and job lifecycle results.'
+            : 'System shows warnings and errors written to <code class="kbd">data/logs/cctv.log</code>.';
+        }
+        fillLogLevels();
+        loadLogs();
+      });
+    });
+
+    document.getElementById('log-level')?.addEventListener('change', loadLogs);
+    document.getElementById('logs-refresh')?.addEventListener('click', loadLogs);
+    document.getElementById('log-search')?.addEventListener('input', App.debounce(loadLogs, 300));
+    loadLogs();
+  }
+
+  setupLogs();
+
+  load().catch((err) => App.toast(err.message, 'error'));
+</script>
+{% endblock %}

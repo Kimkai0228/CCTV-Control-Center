@@ -1,0 +1,24 @@
+services:
+  cctv-autonomous-v3:
+    build:
+      context: .
+    container_name: cctv-autonomous-v3
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Phnom_Penh
+      - PYTHONUNBUFFERED=1
+      - PORT=5555
+      # Runtime app user. Match these to the owner of ./data on the host.
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    env_file:
+      - .env
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./data:/app/data
+      # Hikvision SDK is proprietary and is not baked into the public image.
+      # Keep it on the host and mount it for Hikvision/DVR footage export.
+      - ./lib:/app/lib
+    devices:
+      - /dev/dri:/dev/dri

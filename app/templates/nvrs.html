@@ -1,0 +1,446 @@
+{% extends "base.html" %}
+{% block title %}NVRs & cameras{% endblock %}
+{% block heading %}NVRs &amp; cameras{% endblock %}
+{% block subheading %}Devices, discovery, storage health and camera inventory{% endblock %}
+{% block topbar_actions %}
+  {% if is_admin %}
+  <button class="btn btn-ghost btn-sm" id="discover-all">Discover all</button>
+  <button class="btn btn-sm" id="add-nvr">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    Add NVR
+  </button>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-4 mb-3" id="nvr-stats"></div>
+<div class="health-grid" id="nvr-grid">
+  <div class="skeleton" style="height:190px"></div>
+  <div class="skeleton" style="height:190px"></div>
+  <div class="skeleton" style="height:190px"></div>
+</div>
+
+<!-- NVR form modal -->
+<div class="modal-backdrop" id="nvr-modal">
+  <div class="modal wide">
+    <div class="modal-head"><h2 id="nvr-modal-title">Add NVR</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <form id="nvr-form">
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field"><label>Display name</label><input class="input" name="name" required placeholder="TK-ECP-16"></div>
+          <div class="field"><label>Code <span class="hint">(unique)</span></label><input class="input" name="code" placeholder="nvr_tk_ecp16"></div>
+          <div class="field"><label>Campus</label><input class="input" name="campus" required placeholder="tk" value="tk"></div>
+          <div class="field"><label>Zone</label><input class="input" name="zone" required placeholder="ecp" value="general"></div>
+          <div class="field"><label>Protocol</label>
+            <select class="select" name="protocol">
+              <option value="hikvision">Hikvision SDK (NVR)</option>
+              <option value="dvr">Hikvision SDK (DVR)</option>
+              <option value="truvision">TruVision / ISAPI</option>
+              <option value="rtsp">RTSP only</option>
+            </select>
+          </div>
+          <div class="field"><label>Host / IP</label><input class="input" name="host" required placeholder="192.168.1.10"></div>
+          <div class="field"><label>Web / ISAPI port</label><input class="input" name="port" type="number" value="80"></div>
+          <div class="field"><label>SDK port</label><input class="input" name="sdk_port" type="number" value="8000"></div>
+          <div class="field"><label>Username</label><input class="input" name="username" value="admin"></div>
+          <div class="field"><label>Password <span class="hint" id="pw-hint"></span></label><input class="input" name="password" type="password" autocomplete="new-password"></div>
+          <div class="field"><label>Channel offset <span class="hint">(NVR IP cams usually 32)</span></label><input class="input" name="channel_offset" type="number" value="32"></div>
+          <div class="field"><label>Track multiplier <span class="hint">(TruVision usually 100)</span></label><input class="input" name="track_multiplier" type="number" value="100"></div>
+          <div class="field"><label>Time offset hours</label><input class="input" name="time_offset_hours" type="number" step="0.5" value="0"></div>
+          <div class="field" style="justify-content:end">
+            <label class="switch"><input type="checkbox" name="enabled" checked><span class="track"></span><span class="small">Enabled</span></label>
+            <label class="switch"><input type="checkbox" name="auto_discover" checked><span class="track"></span><span class="small">Auto discovery</span></label>
+          </div>
+        </div>
+        <p class="tiny faint mt-2">Passwords are encrypted at rest in the database. Leave blank while editing to keep the existing password.</p>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-modal-close>Cancel</button><button class="btn" type="submit" id="nvr-save">Save NVR</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Cameras modal -->
+<div class="modal-backdrop" id="cam-modal">
+  <div class="modal wide">
+    <div class="modal-head"><h2 id="cam-modal-title">Cameras</h2><button class="icon-btn" data-modal-close>✕</button></div>
+    <div class="modal-body">
+      <div class="row mb-2">
+        <input class="input" id="cam-search" placeholder="Search cameras…" style="flex:1">
+        {% if is_admin %}<button class="btn btn-sm" id="add-camera">Add camera</button>{% endif %}
+      </div>
+      <div class="table-wrap" id="cam-table"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-modal-close>Close</button></div>
+  </div>
+</div>
+
+<!-- Camera live view modal -->
+<div class="modal-backdrop" id="live-modal">
+  <div class="modal wide live-modal">
+    <div class="modal-head">
+      <h2 id="live-title">Live view</h2>
+      <span class="badge" id="live-status">Connecting…</span>
+      <button class="icon-btn" data-modal-close aria-label="Close live view">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="live-frame" id="live-frame">
+        <img id="live-image" alt="Camera live view">
+        <div class="live-placeholder" id="live-placeholder">
+          <span class="live-spinner"></span>
+          <span id="live-placeholder-text">Connecting to camera…</span>
+        </div>
+      </div>
+      <div class="row-between mt-2" style="gap:8px;flex-wrap:wrap">
+        <span class="tiny faint" id="live-meta"></span>
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" id="live-pause">Pause</button>
+          <button class="btn btn-ghost btn-sm" id="live-fullscreen">Fullscreen</button>
+          <a class="btn btn-ghost btn-sm" id="live-snapshot" href="#" target="_blank" rel="noopener">Snapshot</a>
+        </div>
+      </div>
+      <p class="tiny faint mt-2">Live view refreshes from the NVR about 3 times per second using the camera's ISAPI JPEG stream. Pause keeps the current frame.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let nvrs = [];
+  let editing = null;
+  let camNvr = null;
+  let liveCamera = null;
+  let livePaused = false;
+  let liveTimeout = null;
+  const liveModal = document.getElementById('live-modal');
+  const liveImage = document.getElementById('live-image');
+  const livePlaceholder = document.getElementById('live-placeholder');
+  const livePlaceholderText = document.getElementById('live-placeholder-text');
+  const livePauseBtn = document.getElementById('live-pause');
+
+  function stats() {
+    const total = nvrs.length;
+    const online = nvrs.filter((n) => n.status === 'online').length;
+    const cams = nvrs.reduce((sum, n) => sum + (n.cameras || []).filter((c) => c.enabled !== false).length, 0);
+    const off = nvrs.reduce((sum, n) => sum + (n.cameras || []).filter((c) => c.enabled !== false && c.online === false).length, 0);
+    return [
+      ['NVRs', total, ''],
+      ['Online', online, online === total ? 'ok' : 'bad'],
+      ['Cameras', cams, ''],
+      ['Offline cams', off, off ? 'bad' : 'ok'],
+    ].map(([label, value, cls]) => `<div class="card stat-card"><div class="stat-value">${value}</div><div class="stat-label">${label}</div><div class="stat-delta ${cls}">${cls === 'ok' ? 'Healthy' : cls === 'bad' ? 'Needs attention' : 'Inventory'}</div></div>`).join('');
+  }
+
+  function card(n) {
+    const hdd = n.hdd_used_percent == null ? null : Number(n.hdd_used_percent);
+    const hddColor = hdd == null ? 'var(--text-faint)' : hdd >= 90 ? 'var(--danger)' : hdd >= 75 ? 'var(--warning)' : 'var(--success)';
+    const cams = (n.cameras || []).filter((c) => c.enabled !== false);
+    const offline = cams.filter((c) => c.online === false).length;
+    return `<div class="card nvr-card">
+      <div class="top">
+        <span class="stat-icon" style="margin:0;width:38px;height:38px;border-radius:11px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>
+        </span>
+        <div style="flex:1;min-width:0">
+          <div class="name truncate">${App.escapeHtml(n.name)}</div>
+          <div class="meta">${App.escapeHtml((n.campus || '').toUpperCase())} · ${App.escapeHtml((n.zone || '').replaceAll('_',' '))} · ${App.escapeHtml(n.host)}</div>
+        </div>
+        ${App.statusBadge(n.status)}
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="v">${cams.length}</div><div class="l">Cameras</div></div>
+        <div class="metric"><div class="v" style="color:${hddColor}">${hdd == null ? '—' : Math.round(hdd) + '%'}</div><div class="l">HDD</div></div>
+      </div>
+      ${hdd != null ? `<div class="progress thin mt-2"><i style="width:${Math.min(100,hdd)}%;background:${hddColor}"></i></div>` : ''}
+      <div class="row mt-2">
+        ${offline ? `<span class="badge badge-danger no-dot">${offline} cam offline</span>` : `<span class="badge badge-success no-dot">Cams OK</span>`}
+        <span class="tiny faint">Seen ${App.timeAgo(n.last_seen)}</span>
+      </div>
+      <div class="row mt-2" style="gap:5px">
+        <button class="btn btn-ghost btn-xs" data-cams="${n.id}">Cameras</button>
+        <button class="btn btn-ghost btn-xs" data-test="${n.id}">Test</button>
+        <button class="btn btn-ghost btn-xs" data-health="${n.id}">Health</button>
+        {% if is_admin %}<button class="btn btn-ghost btn-xs" data-discover="${n.id}">Discover</button>
+        <button class="btn btn-ghost btn-xs" data-edit="${n.id}">Edit</button>
+        <button class="btn btn-ghost btn-xs" style="color:var(--danger)" data-del="${n.id}">Delete</button>{% endif %}
+      </div>
+    </div>`;
+  }
+
+  async function load() {
+    const data = await App.api('/api/nvrs');
+    nvrs = data.nvrs;
+    document.getElementById('nvr-stats').innerHTML = stats();
+    const host = document.getElementById('nvr-grid');
+    host.innerHTML = nvrs.length ? nvrs.map(card).join('') : App.emptyState('No NVRs yet. Add your first NVR to get started.', '');
+    host.querySelectorAll('[data-cams]').forEach((b) => b.addEventListener('click', () => openCameras(Number(b.getAttribute('data-cams')))));
+    host.querySelectorAll('[data-test]').forEach((b) => b.addEventListener('click', () => action(Number(b.getAttribute('data-test')), 'test')));
+    host.querySelectorAll('[data-health]').forEach((b) => b.addEventListener('click', () => health(Number(b.getAttribute('data-health')))));
+    host.querySelectorAll('[data-discover]').forEach((b) => b.addEventListener('click', () => action(Number(b.getAttribute('data-discover')), 'discover')));
+    host.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => openForm(Number(b.getAttribute('data-edit')))));
+    host.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => removeNvr(Number(b.getAttribute('data-del')))));
+  }
+
+  function formToObject(form) {
+    const data = new FormData(form);
+    return {
+      name: data.get('name'), code: data.get('code'), campus: data.get('campus'), zone: data.get('zone'),
+      protocol: data.get('protocol'), host: data.get('host'), port: Number(data.get('port')), sdk_port: Number(data.get('sdk_port')),
+      username: data.get('username'), password: data.get('password') || null, channel_offset: Number(data.get('channel_offset')),
+      track_multiplier: Number(data.get('track_multiplier')), time_offset_hours: Number(data.get('time_offset_hours')),
+      enabled: form.querySelector('[name=enabled]').checked, auto_discover: form.querySelector('[name=auto_discover]').checked,
+    };
+  }
+
+  function openForm(id) {
+    editing = id || null;
+    const form = document.getElementById('nvr-form');
+    form.reset();
+    document.getElementById('nvr-modal-title').textContent = id ? 'Edit NVR' : 'Add NVR';
+    document.getElementById('pw-hint').textContent = id ? '(leave blank to keep)' : '';
+    if (id) {
+      const n = nvrs.find((x) => x.id === id);
+      if (!n) return;
+      form.name.value = n.name; form.code.value = n.code; form.campus.value = n.campus; form.zone.value = n.zone;
+      form.protocol.value = n.protocol; form.host.value = n.host; form.port.value = n.port; form.sdk_port.value = n.sdk_port;
+      form.username.value = n.username; form.channel_offset.value = n.channel_offset; form.track_multiplier.value = n.track_multiplier;
+      form.time_offset_hours.value = n.time_offset_hours; form.querySelector('[name=enabled]').checked = n.enabled;
+      form.querySelector('[name=auto_discover]').checked = n.auto_discover;
+    }
+    App.modal('nvr-modal').open();
+  }
+
+  document.getElementById('add-nvr')?.addEventListener('click', () => openForm(null));
+  document.getElementById('nvr-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('nvr-save'); btn.disabled = true;
+    try {
+      const body = formToObject(e.target);
+      if (editing) await App.api(`/api/nvrs/${editing}`, { method: 'PATCH', body });
+      else await App.api('/api/nvrs', { method: 'POST', body });
+      App.toast('NVR saved', 'success');
+      App.modal('nvr-modal').close();
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  async function action(id, type) {
+    const labels = { test: 'Testing connection…', discover: 'Discovering cameras…' };
+    App.toast(labels[type] || 'Working…', 'info');
+    try {
+      const result = await App.api(`/api/nvrs/${id}/${type}`, { method: 'POST' });
+      App.toast(result.message || 'Done', result.ok ? 'success' : 'error');
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+  }
+
+  async function health(id) {
+    try {
+      const result = await App.api(`/api/nvrs/${id}/health`);
+      const n = result.nvr;
+      App.toast(`${result.ok ? 'Online' : 'Offline'} · ${(result.storage || []).length} disk(s)`, result.ok ? 'success' : 'error');
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+  }
+
+  async function removeNvr(id) {
+    if (!await App.confirm('Delete this NVR and all of its cameras? Jobs already created are kept.', { danger: true, confirm: 'Delete NVR' })) return;
+    try { await App.api(`/api/nvrs/${id}`, { method: 'DELETE' }); App.toast('NVR deleted', 'success'); await load(); }
+    catch (err) { App.toast(err.message, 'error'); }
+  }
+
+  function camRows(query) {
+    if (!camNvr) return '';
+    const q = (query || '').toLowerCase();
+    const cams = (camNvr.cameras || []).filter((c) => !q || ((c.name || '') + ' ' + c.channel + ' ' + (c.ip_address || '') + ' ' + (c.mac_address || '')).toLowerCase().includes(q));
+    if (!cams.length) return App.emptyState('No cameras found.', '');
+    return `<table><thead><tr><th>CH</th><th>Name</th><th class="hide-mobile">IP address</th><th class="hide-mobile">MAC address</th><th>Status</th><th></th></tr></thead><tbody>${cams.map((c) => {
+      const disabled = c.enabled === false;
+      return `<tr${disabled ? ' style="opacity:.55"' : ''}>
+      <td class="mono">${c.channel}</td>
+      <td><input class="input" style="padding:5px 8px;font-size:.78rem" value="${App.escapeHtml(c.name)}" data-cam-name="${c.id}" {% if not is_admin %}disabled{% endif %}></td>
+      <td class="hide-mobile"><input class="input mono" style="padding:5px 8px;font-size:.72rem" value="${App.escapeHtml(c.ip_address || '')}" placeholder="—" data-cam-ip="${c.id}" {% if not is_admin %}disabled{% endif %}></td>
+      <td class="hide-mobile"><input class="input mono" style="padding:5px 8px;font-size:.72rem" value="${App.escapeHtml(c.mac_address || '')}" placeholder="—" data-cam-mac="${c.id}" {% if not is_admin %}disabled{% endif %}></td>
+      <td>${disabled ? '<span class="badge">Disabled</span>' : c.online === true ? '<span class="badge badge-success">Online</span>' : c.online === false ? '<span class="badge badge-danger">Offline</span>' : '<span class="badge">Unknown</span>'}</td>
+      <td><div class="actions">
+        ${disabled ? '' : `<button class="btn btn-ghost btn-xs" data-live="${c.id}">Live</button>
+        <a class="btn btn-ghost btn-xs" href="/api/cameras/${c.id}/snapshot" target="_blank">Snapshot</a>`}
+        {% if is_admin %}<button class="btn btn-ghost btn-xs" data-save-cam="${c.id}">Save</button>
+        <button class="btn btn-ghost btn-xs" style="color:${disabled ? 'var(--success)' : 'var(--warning)'}" data-toggle-cam="${c.id}" data-enable="${disabled ? 'true' : 'false'}">${disabled ? 'Enable' : 'Disable'}</button>{% endif %}
+      </div></td>
+    </tr>`;
+    }).join('')}</tbody></table>`;
+  }
+
+  function wireCamRows() {
+    document.querySelectorAll('[data-live]').forEach((btn) => btn.addEventListener('click', () => openLive(Number(btn.getAttribute('data-live')))));
+    document.querySelectorAll('[data-save-cam]').forEach((btn) => btn.addEventListener('click', async () => {
+      const id = Number(btn.getAttribute('data-save-cam'));
+      const input = document.querySelector(`[data-cam-name="${id}"]`);
+      const ip = document.querySelector(`[data-cam-ip="${id}"]`);
+      const mac = document.querySelector(`[data-cam-mac="${id}"]`);
+      try { await App.api(`/api/cameras/${id}`, { method: 'PATCH', body: { name: input.value, ip_address: ip ? ip.value : null, mac_address: mac ? mac.value : null } }); App.toast('Camera saved', 'success'); await refreshCameras(); }
+      catch (err) { App.toast(err.message, 'error'); }
+    }));
+    document.querySelectorAll('[data-toggle-cam]').forEach((btn) => btn.addEventListener('click', async () => {
+      const id = Number(btn.getAttribute('data-toggle-cam'));
+      const enable = btn.getAttribute('data-enable') === 'true';
+      if (!enable && !await App.confirm(
+        'Disable this port? It will be hidden from footage selection and ignored by health checks until you enable it again.',
+        { confirm: 'Disable camera' },
+      )) return;
+      try {
+        await App.api(`/api/cameras/${id}`, { method: 'PATCH', body: { enabled: enable } });
+        App.toast(enable ? 'Camera enabled' : 'Camera disabled', 'success');
+        await refreshCameras();
+      } catch (err) { App.toast(err.message, 'error'); }
+    }));
+  }
+
+  async function refreshCameras() {
+    const data = await App.api(`/api/nvrs`);
+    nvrs = data.nvrs;
+    camNvr = nvrs.find((n) => n.id === camNvr.id) || camNvr;
+    document.getElementById('cam-table').innerHTML = camRows(document.getElementById('cam-search').value);
+    wireCamRows();
+    await load();
+  }
+
+  function openCameras(id) {
+    camNvr = nvrs.find((n) => n.id === id);
+    if (!camNvr) return;
+    document.getElementById('cam-modal-title').textContent = `${camNvr.name} · cameras`;
+    document.getElementById('cam-search').value = '';
+    document.getElementById('cam-table').innerHTML = camRows('');
+    wireCamRows();
+    App.modal('cam-modal').open();
+  }
+
+  function setLiveStatus(kind, text) {
+    const badge = document.getElementById('live-status');
+    badge.className = 'badge' + (kind === 'ok' ? ' badge-success' : kind === 'error' ? ' badge-danger' : kind === 'paused' ? ' badge-warning' : '');
+    badge.textContent = text;
+  }
+
+  function showLivePlaceholder(text, showSpinner) {
+    livePlaceholder.style.display = 'flex';
+    livePlaceholderText.textContent = text;
+    livePlaceholder.classList.toggle('loading', !!showSpinner);
+  }
+
+  function stopLive() {
+    clearTimeout(liveTimeout);
+    liveTimeout = null;
+    livePaused = false;
+    liveImage.removeAttribute('src');
+    livePauseBtn.textContent = 'Pause';
+  }
+
+  function startLive() {
+    if (!liveCamera) return;
+    clearTimeout(liveTimeout);
+    livePaused = false;
+    livePauseBtn.textContent = 'Pause';
+    setLiveStatus('', 'Connecting…');
+    showLivePlaceholder('Connecting to camera…', true);
+    liveImage.src = `/api/cameras/${liveCamera.id}/live.mjpg?t=${Date.now()}`;
+    liveTimeout = setTimeout(() => {
+      if (!liveImage.naturalWidth) {
+        setLiveStatus('error', 'Unavailable');
+        showLivePlaceholder('Live view unavailable. Check the NVR connection or use Snapshot.', false);
+      }
+    }, 12000);
+  }
+
+  function openLive(id) {
+    if (!camNvr) return;
+    const camera = (camNvr.cameras || []).find((c) => c.id === id);
+    if (!camera) return;
+    liveCamera = camera;
+    document.getElementById('live-title').textContent = `${camNvr.name} · ${camera.name || 'Camera'}`;
+    document.getElementById('live-meta').textContent = `CH ${camera.channel} · ${camNvr.host}`;
+    document.getElementById('live-snapshot').href = `/api/cameras/${camera.id}/snapshot`;
+    App.modal('live-modal').open();
+    startLive();
+  }
+
+  liveImage.addEventListener('load', () => {
+    clearTimeout(liveTimeout);
+    liveTimeout = null;
+    if (livePaused) return;
+    livePlaceholder.style.display = 'none';
+    setLiveStatus('ok', 'Live');
+  });
+
+  liveImage.addEventListener('error', () => {
+    if (livePaused) return;
+    clearTimeout(liveTimeout);
+    liveTimeout = null;
+    setLiveStatus('error', 'Unavailable');
+    showLivePlaceholder('Live view unavailable. Check the NVR connection or use Snapshot.', false);
+  });
+
+  livePauseBtn.addEventListener('click', () => {
+    if (!liveCamera) return;
+    if (!livePaused) {
+      livePaused = true;
+      clearTimeout(liveTimeout);
+      liveTimeout = null;
+      livePauseBtn.textContent = 'Resume';
+      setLiveStatus('paused', 'Paused');
+      // Replace the stream with a one-shot snapshot so the last frame stays
+      // visible while the long-lived connection is closed.
+      liveImage.src = `/api/cameras/${liveCamera.id}/snapshot?t=${Date.now()}`;
+      livePlaceholder.style.display = 'none';
+    } else {
+      startLive();
+    }
+  });
+
+  document.getElementById('live-fullscreen').addEventListener('click', async () => {
+    const frame = document.getElementById('live-frame');
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await frame.requestFullscreen();
+    } catch (err) {
+      App.toast('Fullscreen is not available in this browser', 'error');
+    }
+  });
+
+  new MutationObserver(() => {
+    if (!liveModal.classList.contains('open')) {
+      liveCamera = null;
+      stopLive();
+    }
+  }).observe(liveModal, { attributes: true, attributeFilter: ['class'] });
+
+  document.getElementById('cam-search').addEventListener('input', (e) => {
+    document.getElementById('cam-table').innerHTML = camRows(e.target.value);
+    wireCamRows();
+  });
+  document.getElementById('add-camera')?.addEventListener('click', async () => {
+    if (!camNvr) return;
+    const channel = prompt('Camera channel number:');
+    if (!channel) return;
+    const name = prompt('Camera name:');
+    if (!name) return;
+    try { await App.api(`/api/nvrs/${camNvr.id}/cameras`, { method: 'POST', body: { channel: Number(channel), name } }); await refreshCameras(); }
+    catch (err) { App.toast(err.message, 'error'); }
+  });
+
+  document.getElementById('discover-all')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Discovering…';
+    try {
+      const result = await App.api('/api/nvrs/discover-all', { method: 'POST' });
+      const ok = result.results.filter((r) => r.ok).length;
+      App.toast(`Discovered cameras on ${ok}/${result.results.length} NVR(s)`, ok ? 'success' : 'error');
+      await load();
+    } catch (err) { App.toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Discover all'; }
+  });
+
+  load().catch((err) => App.toast(err.message, 'error'));
+  App.autoRefresh(load, 30000);
+</script>
+{% endblock %}

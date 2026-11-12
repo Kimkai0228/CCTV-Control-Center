@@ -1,0 +1,55 @@
+# Remote campus agent.
+#
+# Run this on the campus host, NOT on the main server:
+#
+#   cp .env.agent.example .env.agent
+#   # edit .env.agent (main URL + token)
+#   docker compose -f docker-compose.agent.yml --env-file .env.agent up -d --build
+#
+# The agent does not publish port 5555 by default. For direct downloads, keep
+# the port on loopback so a local nginx can proxy only /agent-files/ to it.
+# Set AGENT_BIND=0.0.0.0 only if nginx runs on a different host.
+
+services:
+  cctv-agent:
+    image: ${CCTV_IMAGE:-cctv-autonomous-v3:latest}
+    build:
+      context: .
+    container_name: ${AGENT_CONTAINER_NAME:-cctv-agent}
+    restart: unless-stopped
+    environment:
+      - TZ=${TIMEZONE:-Asia/Phnom_Penh}
+      - PYTHONUNBUFFERED=1
+      - PORT=5555
+      - RUN_AGENT=true
+      - RUN_BOT=false
+      - RUN_SCHEDULER=false
+      - AGENT_MAIN_URL=${AGENT_MAIN_URL}
+      - AGENT_TOKEN=${AGENT_TOKEN}
+      - AGENT_NAME=${AGENT_NAME:-Campus agent}
+      - AGENT_CAMPUS=${AGENT_CAMPUS:-}
+      - AGENT_ZONES=${AGENT_ZONES:-}
+      - AGENT_WORKERS=${AGENT_WORKERS:-2}
+      - AGENT_POLL_SECONDS=${AGENT_POLL_SECONDS:-20}
+      - AGENT_VERIFY_TLS=${AGENT_VERIFY_TLS:-true}
+      - AGENT_KEEP_FILES=${AGENT_KEEP_FILES:-false}
+      - AGENT_KEEP_FILES_DAYS=${AGENT_KEEP_FILES_DAYS:-7}
+      - AGENT_UPLOAD_CHUNK_MB=${AGENT_UPLOAD_CHUNK_MB:-8}
+      - AGENT_UPLOAD_RETRIES=${AGENT_UPLOAD_RETRIES:-4}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      # Writable state, temporary footage and direct-download files
+      # (agent-data/agent-files) for this agent only.
+      - ./agent-data:/app/data
+      # Proprietary Hikvision SDK. Required only for hikvision/dvr NVRs.
+      # Copy the host's lib/ directory next to this compose file.
+      - ./lib:/app/lib
+    # Loopback publish for a same-host nginx that serves /agent-files/.
+    # Set AGENT_BIND=0.0.0.0 in .env.agent if nginx runs on another host,
+    # and keep its location block limited to /agent-files/.
+    ports:
+      - "${AGENT_BIND:-127.0.0.1}:${AGENT_PORT:-5555}:5555"
+    # Optional Intel QuickSync. Comment out if the host has no /dev/dri.
+    devices:
+      - /dev/dri:/dev/dri
