@@ -77,7 +77,10 @@ re-synced on each start; it cannot be deleted.
 10. Optional: register campus agents (section 12).
 
 Hikvision/DVR export requires the proprietary SDK in `./lib`; it is mounted into
-the container but never baked into the image.
+the container but never baked into the image. You must obtain the Linux SDK from
+Hikvision (or your NVR vendor) yourself and place `libhcnetsdk.so`,
+`HCNetSDKCom/` and the dependent libraries in `./lib`. This project does not
+distribute Hikvision binaries.
 
 ---
 

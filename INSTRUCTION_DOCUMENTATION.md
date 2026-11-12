@@ -69,6 +69,10 @@ from the host.
 > `./lib/HCNetSDKCom/` on the host. The proprietary SDK is not baked into the
 > public image; `docker-compose.yml` mounts `./lib` at `/app/lib`. Copy the same
 > directory to every campus agent host. TruVision/ISAPI NVRs do not need it.
+>
+> **Obtain the SDK yourself:** this project does not include or redistribute
+> Hikvision binaries. Download the Linux SDK from Hikvision or your NVR vendor,
+> match it to your firmware, and extract it into `./lib`. Never publish `./lib`.
 
 ---
 ## 2. Environment Variables

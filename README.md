@@ -51,6 +51,14 @@ image, so `docker-compose.yml` mounts `./lib` at `/app/lib`. Keep that directory
 next to `docker-compose.yml`, and copy it to every campus agent host as well.
 TruVision/ISAPI NVRs do not need it.
 
+> **You must obtain the SDK yourself.** This project does not include or
+> redistribute Hikvision binaries. Download the appropriate Linux SDK from
+> Hikvision (or your NVR vendor), extract `libhcnetsdk.so`, `HCNetSDKCom/` and
+> their dependent libraries into `./lib`, and make sure the SDK version matches
+> your recorder firmware. Never commit `./lib` to Git or upload it to a public
+> mirror. If the library is missing, Hikvision/DVR jobs fail with
+> `Hikvision SDK library not found in lib/libhcnetsdk.so`.
+
 ### GPU / QuickSync
 
 `docker-compose.yml` maps `/dev/dri` into the container. The image installs
