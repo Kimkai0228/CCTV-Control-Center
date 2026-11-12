@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Secrets and runtime data — never commit these
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.agent.example
+google_keys.json
+nvr_data.py
+data/
+temp/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+*.pem
+*.key
+
+# Legacy Hikvision SDK binaries and logs are not part of the v3 app.
+lib/
+
+# ---------------------------------------------------------------------------
+# Python / tooling
+# ---------------------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.playwright-mcp/
+.DS_Store
+.idea/
+.vscode/
+
+# Local diagnostic screenshots at the repository root.
+/*.png
+
+# Local tooling and scratch files.
+opencode.json
+test-synce.txt
+
+# Legacy v2 scripts. v3 runs from app/ + run.py and never imports these.
+/cctv_bot.py
+/compressor.py
+/downloader.py
+/mailer.py
+/message_parser.py
+/uploader.py

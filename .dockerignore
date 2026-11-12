@@ -1,0 +1,46 @@
+# ---------------------------------------------------------------------------
+# Never send secrets or runtime data to the Docker daemon.
+# ---------------------------------------------------------------------------
+.git
+.gitignore
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.playwright-mcp
+
+# Secrets, databases and runtime state
+.env
+.env.*
+!.env.example
+!.env.agent.example
+google_keys.json
+nvr_data.py
+data
+temp
+*.db
+*.db-*
+*.sqlite*
+*.log
+*.pem
+*.key
+
+# Legacy v2 scripts, Hikvision SDK binaries and local diagnostics. v3 runs
+# entirely from app/ + run.py and does not import any of these files.
+cctv_bot.py
+compressor.py
+downloader.py
+mailer.py
+message_parser.py
+uploader.py
+lib
+opencode.json
+README.md
+INSTRUCTION_DOCUMENTATION.md
+tests
+*.png
