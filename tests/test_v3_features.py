@@ -1377,3 +1377,89 @@ def test_job_retry_requires_failed_cameras(admin, db, monkeypatch):
 
     db.delete(job)
     db.commit()
+
+
+def test_explicit_folder_name_wins_over_incident_and_date(admin, db):
+    from app.services import jobs as job_service
+
+    nvr = _make_nvr(admin, campus="ttp")
+    camera = admin.post(
+        f"/api/nvrs/{nvr['id']}/cameras",
+        json={"channel": 5, "name": "Gate"},
+    )
+    assert camera.status_code == 200, camera.text
+
+    job = job_service.create_job(
+        db,
+        {
+            "cameras": [{"nvr_id": nvr["id"], "channel": 5}],
+            "date": "30-10-2026",
+            "start_time": "10:00",
+            "end_time": "10:05",
+            "folder_name": "Renamed Incident Folder",
+            "incident": "Theft",
+            "campus": "ttp",
+            "upload": False,
+        },
+        source="bot",
+        auto_start=False,
+    )
+    try:
+        assert job.folder_name == "Renamed Incident Folder"
+    finally:
+        db.delete(job)
+        db.commit()
+
+
+def test_incident_without_folder_name_uses_incident_and_date(admin, db):
+    from app.services import jobs as job_service
+
+    nvr = _make_nvr(admin, campus="ttp")
+    camera = admin.post(
+        f"/api/nvrs/{nvr['id']}/cameras",
+        json={"channel": 6, "name": "Lobby"},
+    )
+    assert camera.status_code == 200, camera.text
+
+    job = job_service.create_job(
+        db,
+        {
+            "cameras": [{"nvr_id": nvr["id"], "channel": 6}],
+            "date": "30-10-2026",
+            "start_time": "10:00",
+            "end_time": "10:05",
+            "incident": "Theft",
+            "campus": "ttp",
+            "upload": False,
+        },
+        source="web",
+        auto_start=False,
+    )
+    try:
+        assert job.folder_name == "Theft 30-10-2026"
+    finally:
+        db.delete(job)
+        db.commit()
+
+
+def test_miniapp_uses_24_hour_pickers_and_top_level_destination(admin):
+    response = admin.get("/miniapp")
+    assert response.status_code == 200, response.text
+    html = response.text
+
+    assert 'id="m-start-hour"' in html
+    assert 'id="m-start-minute"' in html
+    assert 'id="m-end-hour"' in html
+    assert 'id="m-end-minute"' in html
+    assert 'type="time" id="m-start"' not in html
+    assert 'type="time" id="m-end"' not in html
+
+    # Requester email and destination belong in the main form, not "More options".
+    zone_at = html.index("Zone")
+    email_at = html.index("Requester email")
+    destination_at = html.index("Destination")
+    folder_at = html.index("Folder / incident name")
+    more_at = html.index("More options")
+    assert zone_at < email_at < folder_at
+    assert zone_at < destination_at < folder_at
+    assert email_at < more_at

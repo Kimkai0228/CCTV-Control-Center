@@ -50,11 +50,25 @@
       <div class="card card-pad stack">
         <div class="form-grid">
           <div class="field"><label>Date</label><input class="input" type="date" id="m-date"></div>
-          <div class="field"><label>Time range</label>
-            <div class="input-group"><input class="input" type="time" id="m-start"><input class="input" type="time" id="m-end"></div>
+          <div class="field"><label>Time range <span class="hint">(24-hour)</span></label>
+            <div class="time-range">
+              <div class="time-pick">
+                <select class="select" id="m-start-hour" aria-label="Start hour"></select>
+                <span class="time-sep">:</span>
+                <select class="select" id="m-start-minute" aria-label="Start minute"></select>
+              </div>
+              <span class="time-arrow">→</span>
+              <div class="time-pick">
+                <select class="select" id="m-end-hour" aria-label="End hour"></select>
+                <span class="time-sep">:</span>
+                <select class="select" id="m-end-minute" aria-label="End minute"></select>
+              </div>
+            </div>
           </div>
           <div class="field"><label>Campus</label><select class="select" id="m-campus"></select></div>
           <div class="field"><label>Zone</label><select class="select" id="m-zone"></select></div>
+          <div class="field"><label>Requester email</label><input class="input" id="m-email" type="email" placeholder="name@school.edu.kh"></div>
+          <div class="field"><label>Destination</label><select class="select" id="m-destination"></select></div>
           <div class="field span-2"><label>Folder / incident name</label><input class="input" id="m-folder" placeholder="Custom folder name"></div>
         </div>
 
@@ -68,9 +82,7 @@
         <details>
           <summary class="small strong" style="cursor:pointer;color:var(--text-soft)">More options</summary>
           <div class="form-grid mt-2">
-            <div class="field"><label>Incident description</label><input class="input" id="m-incident" placeholder="What happened?"></div>
-            <div class="field"><label>Requester email</label><input class="input" id="m-email" type="email" placeholder="name@school.edu.kh"></div>
-            <div class="field span-2"><label>Destination</label><select class="select" id="m-destination"></select></div>
+            <div class="field span-2"><label>Incident description</label><input class="input" id="m-incident" placeholder="What happened?"></div>
           </div>
         </details>
       </div>

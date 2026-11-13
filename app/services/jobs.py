@@ -361,14 +361,20 @@ def create_job(
         raise ValueError(f"No enabled agent serves the {campus.upper()} campus")
 
     date_str = str(payload.get("date")).strip()
-    folder_name = safe_filename(
-        payload.get("folder_name")
-        or payload.get("incident")
-        or get_setting(db, "jobs.default_folder_name", "CCTV_Request"),
-        "CCTV_Request",
-    )
-    if payload.get("incident"):
-        folder_name = safe_filename(f"{payload.get('incident')} {date_str}", folder_name)
+    explicit_folder = str(payload.get("folder_name") or "").strip()
+    if explicit_folder:
+        # An explicit folder name (bot rename, /tk <name>, web/MiniApp field)
+        # must always win over the incident + date convention.
+        folder_name = safe_filename(explicit_folder, "CCTV_Request")
+    else:
+        base = str(payload.get("incident") or "").strip()
+        if base:
+            folder_name = safe_filename(f"{base} {date_str}".strip(), "CCTV_Request")
+        else:
+            folder_name = safe_filename(
+                get_setting(db, "jobs.default_folder_name", "CCTV_Request"),
+                "CCTV_Request",
+            )
 
     job = models.Job(
         ref=_ref(),

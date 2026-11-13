@@ -153,6 +153,31 @@
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
+  function buildTimePickers() {
+    const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+    const minutes = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+    ["m-start-hour", "m-end-hour"].forEach((id) => {
+      const select = $("#" + id);
+      if (select) select.innerHTML = hours.map((h) => `<option value="${h}">${h}</option>`).join("");
+    });
+    ["m-start-minute", "m-end-minute"].forEach((id) => {
+      const select = $("#" + id);
+      if (select) select.innerHTML = minutes.map((m) => `<option value="${m}">${m}</option>`).join("");
+    });
+  }
+
+  function setTime(prefix, value) {
+    const [hour, minute] = String(value || "00:00").split(":");
+    const hourEl = $("#" + prefix + "-hour");
+    const minuteEl = $("#" + prefix + "-minute");
+    if (hourEl) hourEl.value = hour;
+    if (minuteEl) minuteEl.value = minute;
+  }
+
+  function getTime(prefix) {
+    return `${$("#" + prefix + "-hour").value}:${$("#" + prefix + "-minute").value}`;
+  }
+
   function apiDate(value) {
     const parts = String(value || "").split("-");
     return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : value;
@@ -333,8 +358,8 @@
   function updateSummary() {
     const count = state.selected.size;
     const date = $("#m-date").value;
-    const start = $("#m-start").value;
-    const end = $("#m-end").value;
+    const start = getTime("m-start");
+    const end = getTime("m-end");
     if (!count) {
       $("#m-summary").textContent = "Select cameras to begin";
       return;
@@ -382,8 +407,8 @@
       return;
     }
     const date = $("#m-date").value;
-    const start = $("#m-start").value;
-    const end = $("#m-end").value;
+    const start = getTime("m-start");
+    const end = getTime("m-end");
     if (!date || !start || !end) {
       App.toast("Choose a date and time range", "error");
       return;
@@ -393,6 +418,7 @@
       return;
     }
     const folderInput = $("#m-folder").value.trim();
+    const incidentText = $("#m-incident").value.trim();
     const defaultFolder = state.settings.default_folder || "CCTV_Request";
     const folderName = folderInput || `${defaultFolder} ${apiDate(date)}`;
     const destination = $("#m-destination").value;
@@ -416,7 +442,7 @@
         start_time: start,
         end_time: end,
         folder_name: folderName,
-        incident: folderInput || folderName,
+        incident: incidentText || folderInput || folderName,
         campus: state.campus,
         requester_email: email || null,
         drive_folder_key: upload ? destination : null,
@@ -576,11 +602,14 @@
 
   function wire() {
     $("#m-date").value = todayValue();
-    $("#m-start").value = timeValue(-60);
-    $("#m-end").value = timeValue(0);
+    buildTimePickers();
+    setTime("m-start", timeValue(-60));
+    setTime("m-end", timeValue(0));
     $("#m-date").addEventListener("change", updateSummary);
-    $("#m-start").addEventListener("change", updateSummary);
-    $("#m-end").addEventListener("change", updateSummary);
+    $("#m-start-hour").addEventListener("change", updateSummary);
+    $("#m-start-minute").addEventListener("change", updateSummary);
+    $("#m-end-hour").addEventListener("change", updateSummary);
+    $("#m-end-minute").addEventListener("change", updateSummary);
     $("#m-campus").addEventListener("change", (event) => {
       state.campus = event.target.value;
       fillZones();
