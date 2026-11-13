@@ -98,7 +98,7 @@
           <a class="btn btn-ghost btn-sm" id="live-snapshot" href="#" target="_blank" rel="noopener">Snapshot</a>
         </div>
       </div>
-      <p class="tiny faint mt-2">Live view refreshes from the NVR about 3 times per second using the camera's ISAPI JPEG stream. Pause keeps the current frame.</p>
+      <p class="tiny faint mt-2">Live view uses the recorder's RTSP stream, transcoded to MJPEG for smooth playback. Quality and stream are set in <b>Settings → Compression → Live view</b>. Pause keeps the current frame.</p>
     </div>
   </div>
 </div>
@@ -113,6 +113,7 @@
   let livePaused = false;
   let liveTimeout = null;
   const liveModal = document.getElementById('live-modal');
+  const liveFrame = document.getElementById('live-frame');
   const liveImage = document.getElementById('live-image');
   const livePlaceholder = document.getElementById('live-placeholder');
   const livePlaceholderText = document.getElementById('live-placeholder-text');
@@ -368,6 +369,11 @@
   liveImage.addEventListener('load', () => {
     clearTimeout(liveTimeout);
     liveTimeout = null;
+    if (liveImage.naturalWidth && liveImage.naturalHeight) {
+      // Match the frame to the real stream shape instead of forcing 16:9,
+      // which letterboxes 4:3 recorders and looks like a cropped picture.
+      liveFrame.style.aspectRatio = `${liveImage.naturalWidth} / ${liveImage.naturalHeight}`;
+    }
     if (livePaused) return;
     livePlaceholder.style.display = 'none';
     setLiveStatus('ok', 'Live');

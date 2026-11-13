@@ -14,6 +14,8 @@ from ..database import get_db
 from ..security import audit, decrypt_secret, encrypt_secret, get_current_user, require_roles
 from ..services.nvr import NVRClient, apply_camera_address, nvr_public_dict
 from ..services.health import HealthChecker
+from ..services import live
+from ..settings_service import get_setting
 
 router = APIRouter(prefix="/api", tags=["nvrs"])
 ADMIN = require_roles("superadmin", "admin")
@@ -473,15 +475,48 @@ def camera_live(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """MJPEG live view made from the NVR's ISAPI snapshot stream.
+    """Smooth MJPEG live view.
 
-    Hikvision/TruVision expose a JPEG per channel over ISAPI. Repainting those
-    frames is far more portable than requiring HLS/WebRTC on every campus
-    network, and works in every browser with a plain ``<img>`` tag.
+    Production requests pull the recorder's RTSP stream through ffmpeg and
+    transcode it to MJPEG.  ``frames`` keeps a small snapshot-polling fallback
+    for diagnostics, tests and hosts where ffmpeg is unavailable.
     """
     camera = db.get(models.Camera, camera_id)
     if not camera or not camera.nvr:
         raise HTTPException(status_code=404, detail="Camera not found")
+
+    profile = live.profile_for(
+        get_setting(db, "live.quality"),
+        get_setting(db, "live.stream"),
+    )
+
+    if frames <= 0 and live.ffmpeg_available():
+        try:
+            url = live.rtsp_url(camera.nvr, camera, profile.stream)
+            stream = live.start_process(url, profile)
+        except Exception:
+            raise HTTPException(status_code=503, detail="Live view could not start")
+
+        def generate_ffmpeg():
+            try:
+                while True:
+                    chunk = stream.process.stdout.read(65536) if stream.process.stdout else b""
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                stream.stop()
+
+        return StreamingResponse(
+            generate_ffmpeg(),
+            media_type=f"multipart/x-mixed-replace; boundary={live.BOUNDARY}",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate",
+                "Pragma": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     channel = int(camera.channel)
     client = NVRClient(camera.nvr, timeout=4)
     boundary = "cctvframe"

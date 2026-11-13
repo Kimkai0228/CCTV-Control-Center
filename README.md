@@ -196,9 +196,12 @@ Alerts are de-duplicated by fingerprint and repeat notifications are throttled b
 `health.alert_cooldown_minutes` (default 60). Open alerts appear on **Alerts** and
 in `/health`. Use **Run check now** or `POST /api/health/run` to trigger a sweep.
 
-**Live view** — **NVRs & cameras → Cameras → Live** opens an MJPEG stream built
-from ISAPI snapshots, with Pause/Resume, Fullscreen and Snapshot controls. It
-works for Hikvision NVRs and analog/TVI DVR channels.
+**Live view** — **NVRs & cameras → Cameras → Live** pulls the recorder's RTSP
+stream through `ffmpeg` and delivers smooth MJPEG with Pause/Resume, Fullscreen
+and Snapshot controls. Quality and main/sub stream are set in **Settings →
+Compression → Live view**. Works for Hikvision NVRs, TruVision recorders and
+analog/TVI DVR channels. If `ffmpeg` is unavailable, live view falls back to the
+older ISAPI snapshot stream.
 
 **DVR channel status** — analog channels use
 `/ISAPI/System/workingstatus/chanStatus` when the firmware supports it, then fall

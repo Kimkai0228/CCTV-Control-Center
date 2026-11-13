@@ -83,6 +83,16 @@
       </section>
     </aside>
   </div>
+  <section class="card mt-3" id="live-view">
+    <div class="card-head"><h2>Live view</h2><span class="sub">RTSP stream quality</span></div>
+    <div class="card-body stack">
+      <div class="form-grid">
+        <div class="field"><label>Quality</label><select class="select" data-setting="live.quality"><option value="low">Low — 640 px · 8 fps</option><option value="balanced">Balanced — 960 px · 10 fps</option><option value="high">High — 1280 px · 12 fps</option></select></div>
+        <div class="field"><label>Camera stream</label><select class="select" data-setting="live.stream"><option value="main">Main stream — best quality</option><option value="sub">Sub stream — lower bandwidth</option></select></div>
+      </div>
+      <div class="row-between"><span class="tiny faint">Live view pulls the camera's native RTSP stream and transcodes it to MJPEG. Higher quality uses more CPU and internet bandwidth.</span><button class="btn" data-save="live">Save live view</button></div>
+    </div>
+  </section>
 </div>
 
 <div class="tab-panel" id="settings-jobs">
@@ -242,6 +252,7 @@
   let sections = {
     branding: ['app.name','app.organization','app.public_url','app.theme','app.campus','app.logo_url','app.primary_color','app.secondary_color','app.accent_color','app.background_color'],
     compression: ['compression.enabled','compression.backend','compression.qsv_preset','compression.qsv_quality','compression.cpu_preset','compression.cpu_crf','compression.max_parallel'],
+    live: ['live.quality','live.stream'],
     jobs: ['jobs.max_workers','jobs.keep_local_days','agents.keep_files_days','jobs.default_folder_name'],
     security: ['security.session_hours'],
     health: ['health.enabled','health.interval_minutes','health.alert_cooldown_minutes','health.hdd_threshold_percent','health.nvr_offline_alert','health.offline_camera_alert','health.hdd_capacity_alert'],

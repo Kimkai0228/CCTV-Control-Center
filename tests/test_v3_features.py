@@ -1463,3 +1463,82 @@ def test_miniapp_uses_24_hour_pickers_and_top_level_destination(admin):
     assert zone_at < email_at < folder_at
     assert zone_at < destination_at < folder_at
     assert email_at < more_at
+
+
+def test_live_view_profile_and_rtsp_url():
+    from app import models
+    from app.security import encrypt_secret
+    from app.services import live
+
+    balanced = live.profile_for("balanced", "main")
+    assert (balanced.width, balanced.fps, balanced.stream) == (960, 10, "main")
+
+    high_sub = live.profile_for("high", "sub")
+    assert high_sub.stream == "sub"
+    assert high_sub.width <= 960
+    assert high_sub.fps <= 10
+
+    nvr = models.NVR(
+        name="Test",
+        code="TESTLIVE",
+        protocol="hikvision",
+        host="192.0.2.50",
+        port=80,
+        username="admin",
+        password_enc=encrypt_secret("p@ss:word"),
+    )
+    camera = models.Camera(channel=3, name="Gate")
+
+    url = live.rtsp_url(nvr, camera, "main")
+    assert url == "rtsp://admin:p%40ss%3Aword@192.0.2.50:554/Streaming/Channels/301"
+    assert live.rtsp_url(nvr, camera, "sub").endswith("/302")
+
+    camera.rtsp_path = "/custom/stream"
+    assert live.rtsp_url(nvr, camera).endswith("@192.0.2.50:554/custom/stream")
+
+    camera.rtsp_path = "rtsp://viewer:secret@192.0.2.50/live"
+    assert live.rtsp_url(nvr, camera) == "rtsp://viewer:secret@192.0.2.50/live"
+
+    command = " ".join(live.build_command("/proc/self/fd/9", balanced))
+    assert "scale=w='min(960,iw)':h=-2" in command
+    assert "-f mpjpeg" in command
+    assert "rtsp://" not in command
+
+
+def test_live_view_uses_ffmpeg_when_available(admin, monkeypatch):
+    from app.services import live
+
+    nvr = _make_nvr(admin, campus="ttp")
+    camera = admin.post(
+        f"/api/nvrs/{nvr['id']}/cameras",
+        json={"channel": 1, "name": "Live ffmpeg gate"},
+    )
+    assert camera.status_code == 200, camera.text
+    camera_id = camera.json()["camera"]["id"]
+
+    frame = (
+        b"--ffmpeg\r\nContent-type: image/jpeg\r\nContent-length: 8\r\n\r\n"
+        b"\xff\xd8fake\xff\xd9\r\n"
+    )
+
+    class FakeProcess:
+        def __init__(self, data):
+            self.stdout = __import__("io").BytesIO(data)
+
+    class FakeStream:
+        def __init__(self, data):
+            self.process = FakeProcess(data)
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(live, "ffmpeg_available", lambda: True)
+    monkeypatch.setattr(live, "start_process", lambda url, profile: FakeStream(frame))
+
+    response = admin.get(f"/api/cameras/{camera_id}/live.mjpg")
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "multipart/x-mixed-replace; boundary=ffmpeg"
+    assert frame in response.content
+
+    admin.delete(f"/api/cameras/{camera_id}")
+    admin.delete(f"/api/nvrs/{nvr['id']}")

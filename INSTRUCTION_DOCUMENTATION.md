@@ -289,10 +289,12 @@ filled in by hand. Analog DVR channels have no IP/MAC.
 
 ### Live view
 
-**NVRs & cameras → Cameras → Live** opens a low-latency MJPEG stream built from
-repeated ISAPI JPEG snapshots. The modal can **Pause/Resume**, go **Fullscreen**
-and save a **Snapshot**. Works for Hikvision NVRs and analog/TVI DVR channels on
-DVR recorders as well.
+**NVRs & cameras → Cameras → Live** pulls the recorder's RTSP stream through
+`ffmpeg` and delivers low-latency MJPEG. The modal can **Pause/Resume**, go
+**Fullscreen** and save a **Snapshot**. Quality and main/sub stream are set in
+**Settings → Compression → Live view**. Works for Hikvision NVRs, TruVision
+recorders and analog/TVI DVR channels. If `ffmpeg` is not installed, live view
+falls back to repeated ISAPI JPEG snapshots.
 
 ### DVR channel status
 

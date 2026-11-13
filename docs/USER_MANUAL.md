@@ -280,9 +280,11 @@ sweeps keep status current.
 
 ### 9.3 Live view
 
-**Cameras → Live** opens an MJPEG stream from ISAPI snapshots with Pause/Resume,
-Fullscreen and Snapshot controls. It works for Hikvision NVRs and analog/TVI DVR
-channels.
+**Cameras → Live** pulls the recorder's RTSP stream through `ffmpeg` and shows
+smooth MJPEG with Pause/Resume, Fullscreen and Snapshot controls. Quality and
+main/sub stream are set in **Settings → Compression → Live view**. It works for
+Hikvision NVRs, TruVision recorders and analog/TVI DVR channels. Without
+`ffmpeg`, it falls back to the older ISAPI snapshot stream.
 
 ### 9.4 Disabled ports
 

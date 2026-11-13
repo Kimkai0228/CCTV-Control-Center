@@ -77,6 +77,9 @@ DEFAULT_SETTINGS: dict[str, tuple[str, bool]] = {
     "compression.cpu_preset": ("ultrafast", False),
     "compression.cpu_crf": ("30", False),
     "compression.max_parallel": ("2", False),
+    # Live view: RTSP is transcoded to MJPEG in the browser.
+    "live.quality": ("balanced", False),  # low|balanced|high
+    "live.stream": ("main", False),  # main|sub
     # Download / jobs
     "jobs.max_workers": ("2", False),
     "jobs.keep_local_days": ("7", False),
